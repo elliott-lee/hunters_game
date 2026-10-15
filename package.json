@@ -1,0 +1,24 @@
+{
+  "name": "hunters-game",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --host 0.0.0.0",
+    "test": "node --test tests/rules.test.ts",
+    "test:browser": "playwright test"
+  },
+  "dependencies": {
+    "d3-delaunay": "6.0.4",
+    "phaser": "3.90.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.1",
+    "@types/d3-delaunay": "6.0.4",
+    "@types/node": "^24.0.0",
+    "typescript": "~5.9.3",
+    "vite": "8.3.4"
+  }
+}
