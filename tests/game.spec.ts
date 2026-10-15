@@ -1,8 +1,8 @@
 import { test, expect, type Page } from '@playwright/test';
 
 type Snapshot = {
-  stage: string; busy: boolean; cracks: number; wrongAttempts: number; reduced: boolean; sound: boolean;
-  letters: { char: string; x: number; y: number; value: number }[];
+  stage: string; busy: boolean; cracks: number; wrongAttempts: number; reduced: boolean; sound: boolean; locale: string; texts: string[];
+  letters: { char: string; x: number; y: number; value: number; label: string }[];
   pieces: { id: number; x: number; y: number; width: number; height: number; placed: boolean }[];
   targets: { id: number; x: number; y: number; width: number; height: number; placed?: boolean }[];
   camera: { zoom: number; width: number; height: number };
@@ -32,6 +32,7 @@ async function open(page: Page) {
 test('complete the game through real clicks and drags, including error and wraparound', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
+  await page.addInitScript(() => localStorage.setItem('hunter-language', 'en'));
   await open(page);
   await expect(page.locator('#interface')).toBeHidden();
   await expect(page.locator('canvas')).toBeVisible();
@@ -77,7 +78,8 @@ test('complete the game through real clicks and drags, including error and wrapa
   expect((await state(page)).targets.filter(t => t.placed)).toHaveLength(12);
   await ready(page, 'ending');
   await page.screenshot({ path: 'test-results/05-ending.png' });
-  await expect(page.locator('#announcement')).toContainText('Au travail, les jeunes !');
+  await expect(page.locator('#announcement')).toContainText('Back to work, kids!');
+  expect((await state(page)).texts).toContain('Back to work,\nkids!');
   await page.getByRole('button', { name: 'Play again' }).click();
   await ready(page, 'glass');
   await expect(page.locator('#interface')).toBeHidden();
@@ -91,7 +93,7 @@ test('touch input, resize, settings, keyboard letters, and restart work', async 
   await open(page);
   for (let i = 0; i < 11; i++) { const p = await at(page, 480, 300); await page.touchscreen.tap(p.x, p.y); }
   await ready(page, 'hunter');
-  await page.getByRole('button', { name: 'Reduce effects', exact: true }).click();
+  await page.locator('#effects').click();
   expect((await state(page)).reduced).toBe(true);
   const initial = (await state(page)).letters[0].value;
   const button = page.locator('#letter-controls button').first();
@@ -99,11 +101,12 @@ test('touch input, resize, settings, keyboard letters, and restart work', async 
   expect((await state(page)).letters[0].value).toBe((initial + 1) % 7);
   await page.setViewportSize({ width: 1180, height: 720 });
   await expect.poll(async () => (await state(page)).camera.width).toBe(1180);
-  await page.getByRole('button', { name: 'Restart', exact: true }).click();
-  await page.getByRole('button', { name: 'Keep playing' }).click();
+  await page.locator('#restart').click();
+  await expect(page.getByRole('heading', { name: 'On recommence du début?' })).toBeVisible();
+  await page.locator('#cancel-restart').click();
   expect((await state(page)).stage).toBe('hunter');
-  await page.getByRole('button', { name: 'Restart', exact: true }).click();
-  await page.getByRole('button', { name: 'Start over', exact: true }).click();
+  await page.locator('#restart').click();
+  await page.locator('#confirm-restart').click();
   await ready(page, 'glass');
   await page.reload(); await open(page);
   expect((await state(page)).reduced).toBe(true);
@@ -119,12 +122,16 @@ test('touch dragging reconstructs the word and reduced effects reaches a soft en
   expect((await state(page)).reduced).toBe(true);
   for (let i = 0; i < 11; i++) { const p = await at(page, 400, 300); await page.touchscreen.tap(p.x, p.y); }
   await ready(page, 'hunter');
+  await expect(page.locator('#instruction')).toHaveText('Mets les couleurs de l’arc-en-ciel dans l’ordre.');
   await setLetters(page, [0, 1, 2, 3, 4, 5], 7);
   await ready(page, 'viola');
+  await expect(page.locator('#instruction')).toHaveText('Il y a quelque chose de travers.');
   await setLetters(page, Array(5).fill(0), 4);
   await ready(page, 'whitney');
+  expect((await state(page)).letters.map(l => l.label)).toEqual(['TP', 'TG', 'P', 'G', 'TP', 'TG', 'P']);
   await setLetters(page, Array(7).fill(2), 5);
   await ready(page, 'elliott');
+  await expect(page.locator('#instruction')).toHaveText('Reconstruis ELLIOTT.');
   const cdp = await context.newCDPSession(page);
   for (let i = 0; i < 12; i++) {
     const current = await state(page), piece = current.pieces[i], target = current.targets[i];
@@ -137,7 +144,63 @@ test('touch dragging reconstructs the word and reduced effects reaches a soft en
   }
   expect((await state(page)).targets.filter(t => t.placed)).toHaveLength(12);
   await ready(page, 'ending');
+  await expect(page.getByRole('button', { name: 'Rejouer' })).toBeVisible();
+  expect((await state(page)).texts).toContain('Au travail,\nles jeunes !');
+  await page.locator('#language').click();
+  await expect(page.locator('html')).toHaveAttribute('lang', 'en');
+  expect((await state(page)).texts).toContain('Back to work,\nkids!');
+  expect((await state(page)).stage).toBe('ending');
   await expect(page.getByRole('button', { name: 'Play again' })).toBeVisible();
   expect(errors).toEqual([]);
   await context.close();
+});
+
+test('French is the default, switching preserves play, and the choice is remembered on both pages', async ({ page }) => {
+  await open(page);
+  await expect(page.locator('html')).toHaveAttribute('lang', 'fr-CA');
+  await expect(page).toHaveTitle('Le jeu de Hunter');
+  await expect(page.locator('#language')).toBeHidden();
+  await click(page, 540, 330);
+  await expect(page.locator('#instruction')).toHaveText('Tout commence par une fissure.');
+  await expect(page.locator('#announcement')).toContainText('1 fissure.');
+  await page.getByRole('button', { name: 'Passer en anglais' }).click();
+  await expect(page.locator('html')).toHaveAttribute('lang', 'en');
+  await expect(page.locator('#instruction')).toHaveText('Everything starts with a crack.');
+  await expect(page.locator('#announcement')).toContainText('1 crack.');
+  expect((await state(page)).cracks).toBe(1);
+  for (let i = 0; i < 10; i++) await click(page, 540, 330);
+  await ready(page, 'hunter');
+  await click(page, 250, 330);
+  const values = (await state(page)).letters.map(l => l.value);
+  await page.locator('#language').click();
+  expect((await state(page)).letters.map(l => l.value)).toEqual(values);
+  expect((await state(page)).letters.map(l => l.label)).toEqual(['VIOLET', 'JAUNE', 'ROUGE', 'VIOLET', 'ORANGE', 'BLEU']);
+  await expect(page.locator('#letter-controls button').first()).toContainText('lettre 1');
+  await expect(page.locator('canvas')).toHaveAttribute('aria-label', 'Casse la vitre noire en cliquant ou en appuyant sur Entrée.');
+  await page.locator('#language').click();
+  expect((await state(page)).letters.map(l => l.value)).toEqual(values);
+  expect((await state(page)).letters.map(l => l.label)).toEqual(['VIOLET', 'YELLOW', 'RED', 'VIOLET', 'ORANGE', 'BLUE']);
+  await page.reload(); await ready(page, 'glass');
+  await expect(page.locator('html')).toHaveAttribute('lang', 'en');
+  await expect(page.locator('#interface')).toBeHidden();
+  await page.goto('/credits.html');
+  await expect(page.getByRole('heading', { name: 'Made with a little help.' })).toBeVisible();
+  await page.locator('#language').click();
+  await expect(page.getByRole('heading', { name: 'Avec un petit coup de main.' })).toBeVisible();
+  await expect(page.locator('html')).toHaveAttribute('lang', 'fr-CA');
+  await page.getByRole('link', { name: 'Retour au jeu' }).click();
+  await ready(page, 'glass');
+  await expect(page.locator('html')).toHaveAttribute('lang', 'fr-CA');
+});
+
+test('language choice still works when browser storage is unavailable', async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(window, 'localStorage', { get() { throw new DOMException('Storage unavailable', 'SecurityError'); } });
+  });
+  await open(page);
+  await expect(page.locator('html')).toHaveAttribute('lang', 'fr-CA');
+  await click(page, 540, 330);
+  await page.locator('#language').click();
+  await expect(page.locator('html')).toHaveAttribute('lang', 'en');
+  expect((await state(page)).cracks).toBe(1);
 });

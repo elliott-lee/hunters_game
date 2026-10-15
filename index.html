@@ -1,40 +1,41 @@
 <!doctype html>
-<html lang="en">
+<html lang="fr-CA">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#000000" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="description" content="Crack, colour, twist, resize, and rebuild. A little game about figuring things out." />
-    <title>Hunter's Game</title>
+    <meta name="description" content="Fissure, colore, tourne, redimensionne et reconstruis. Un petit jeu pour apprendre en jouant." />
+    <title>Le jeu de Hunter</title>
   </head>
-  <body>
-    <main id="app" aria-label="Hunter's Game">
-      <div id="game" aria-label="Interactive puzzle canvas"></div>
+  <body data-page="game">
+    <main id="app" aria-label="Le jeu de Hunter" data-i18n-label="siteTitle">
+      <div id="game" aria-label="Casse la vitre noire en cliquant ou en appuyant sur Entrée." data-i18n-label="canvasLabel"></div>
       <div id="interface" hidden>
         <header>
           <span class="brand">H<span class="brand-dot">.</span>G</span>
           <div id="chapter" aria-live="polite"></div>
-          <nav aria-label="Game controls">
-            <button id="sound" aria-pressed="true" title="Toggle sound">Sound on</button>
-            <button id="effects" aria-pressed="false" title="Reduce movement and disable the final flash">Reduce effects</button>
-            <button id="restart" title="Restart from the black screen">Restart</button>
+          <nav aria-label="Commandes du jeu" data-i18n-label="gameControls">
+            <button id="language" lang="en" aria-label="Passer en anglais">English</button>
+            <button id="sound" aria-pressed="true" title="Activer ou couper le son" data-i18n-title="soundTitle">Son activé</button>
+            <button id="effects" aria-pressed="false" title="Réduire les mouvements et désactiver le flash final" data-i18n-title="effectsTitle">Réduire les effets</button>
+            <button id="restart" title="Recommencer à partir de l’écran noir" data-i18n="restart" data-i18n-title="restartTitle">Recommencer</button>
           </nav>
         </header>
         <footer>
           <div><p id="instruction" aria-live="polite"></p><p id="detail"></p></div>
-          <div class="footer-end"><div id="progress" aria-label="Puzzle progress"></div><a href="/credits.html" target="_blank" rel="noopener">Credits ↗</a></div>
+          <div class="footer-end"><div id="progress" aria-label="Progression des casse-têtes" data-i18n-label="progressLabel"></div><a href="/credits.html" target="_blank" rel="noopener" data-i18n="creditsLink">Crédits ↗</a></div>
         </footer>
-        <div id="letter-controls" class="sr-only" aria-label="Keyboard puzzle controls"></div>
+        <div id="letter-controls" class="sr-only" aria-label="Commandes des casse-têtes au clavier" data-i18n-label="keyboardControls"></div>
         <p id="announcement" class="sr-only" role="status"></p>
       </div>
-      <button id="replay" hidden>Play again <span aria-hidden="true">↗</span></button>
+      <button id="replay" data-i18n="replay" hidden>Rejouer ↗</button>
       <dialog id="restart-dialog">
-        <h2>Back to the beginning?</h2>
-        <p>This will reset all five puzzles.</p>
-        <div><button id="cancel-restart">Keep playing</button><button id="confirm-restart">Start over</button></div>
+        <h2 data-i18n="restartHeading">On recommence du début?</h2>
+        <p data-i18n="restartDetail">Les cinq casse-têtes seront remis à zéro.</p>
+        <div><button id="cancel-restart" data-i18n="keepPlaying">Continuer à jouer</button><button id="confirm-restart" data-i18n="startOver">Repartir à zéro</button></div>
       </dialog>
-      <noscript>This game needs JavaScript enabled in your browser.</noscript>
+      <noscript>Active JavaScript dans ton navigateur pour jouer. / Enable JavaScript in your browser to play.</noscript>
     </main>
     <script type="module" src="/src/main.ts"></script>
   </body>

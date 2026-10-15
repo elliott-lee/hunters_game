@@ -13,6 +13,7 @@ header { position: absolute; left: 4vw; right: 4vw; top: max(24px, env(safe-area
 .brand-dot { color: #e8bb6d; padding: 0 3px; }
 #chapter { font-size: 10px; letter-spacing: 2px; text-transform: uppercase; opacity: .65; }
 nav { margin-left: auto; display: flex; gap: 8px; pointer-events: auto; }
+nav button { white-space: nowrap; }
 nav button { color: inherit; background: transparent; border: 1px solid currentColor; border-color: color-mix(in srgb, currentColor 22%, transparent); border-radius: 4px; padding: 9px 11px; font-size: 10px; }
 nav button:hover { background: #ffffff15; }
 nav button[aria-pressed="true"] { border-color: currentColor; }
@@ -28,6 +29,7 @@ p { margin: 0; }
 .step.done { opacity: .8; }
 .step.current { opacity: 1; background: #e8bb6d; }
 #interface.light { color: #292334; }
+#interface.ending footer, #interface.ending .brand, #interface.ending #chapter, #interface.ending #sound, #interface.ending #effects, #interface.ending #restart { display: none; }
 #replay { position: absolute; left: 50%; top: 68%; transform: translateX(-50%); border: 1px solid #241727; padding: 15px 25px; color: #241727; background: transparent; font-size: 12px; }
 #replay span { margin-left: 22px; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
@@ -40,5 +42,5 @@ dialog p { font-size: 12px; }
 dialog div { display: flex; gap: 10px; margin-top: 25px; }
 dialog button { padding: 12px; border-radius: 3px; border: 1px solid #8c769a; background: transparent; color: inherit; }
 #confirm-restart { background: #f3ebff; color: #20132c; }
-@media(max-width: 650px) { header { gap: 12px; top: 18px; } #chapter { font-size: 8px; letter-spacing: 1px; max-width: 100px; } nav { gap: 4px; } nav button { font-size: 9px; padding: 8px 6px; } footer { bottom: 20px; } #detail { max-width: 72vw; } #instruction { font-size: 11px; } .step { width: 12px; } }
+@media(max-width: 760px) { header { gap: 12px; top: 18px; flex-wrap: wrap; } #chapter { font-size: 8px; letter-spacing: 1px; } nav { gap: 4px; width: 100%; margin-left: 0; } nav button { font-size: 9px; padding: 8px 6px; } #interface.ending nav { width: auto; margin-left: auto; } footer { bottom: 20px; } #detail { max-width: 72vw; } #instruction { font-size: 11px; } .step { width: 12px; } }
 @media(max-height: 480px) { header { top: 10px; } footer { bottom: 12px; } #detail { margin-top: 4px; } }

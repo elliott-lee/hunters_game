@@ -1,7 +1,7 @@
 export const RAINBOW = [0xff5369, 0xff9d43, 0xffdf67, 0x66df91, 0x55baff, 0x8275ee, 0xda8bfa];
-export const COLOUR_NAMES = ['red', 'orange', 'yellow', 'green', 'blue', 'indigo', 'violet'];
+export const COLOUR_NAMES = ['red', 'orange', 'yellow', 'green', 'blue', 'indigo', 'violet'] as const;
 export const SIZES = [0.55, 0.78, 1, 1.24, 1.5];
-export const SIZE_NAMES = ['XS', 'SM', 'MD', 'LG', 'XL'];
+export const SIZE_NAMES = ['XS', 'SM', 'MD', 'LG', 'XL'] as const;
 export type Point = { x: number; y: number };
 export function rainbowSolved(values: number[]): boolean {
   return values.length === 6 && values.every((v, i) => Number.isInteger(v) && v >= 0 && v < 7 && (i === 0 || v === (values[i - 1] + 1) % 7));

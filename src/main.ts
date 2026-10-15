@@ -1,26 +1,28 @@
 import Phaser from 'phaser';
 import { Delaunay } from 'd3-delaunay';
 import { Audio } from './audio';
-import { glyph, paintGlyph, litPixels } from './glyphs';
+import { glyph, paintGlyph } from './glyphs';
 import { RAINBOW, COLOUR_NAMES, SIZES, SIZE_NAMES, rainbowSolved, rotationsSolved, sizeResult, nearbyCracks, matchingStroke, type Point, type Stroke } from './rules';
+import { t, locale, bindLanguageControl, onLocaleChange, type TranslationKey, type TranslationParams, type Message } from './i18n';
 import './style.css';
 
 type Stage = 'glass' | 'hunter' | 'viola' | 'whitney' | 'elliott' | 'ending';
-type Letter = { char: string; x: number; y: number; value: number; art: Phaser.GameObjects.Container; hit: Phaser.GameObjects.Zone; label: Phaser.GameObjects.Text };
+type Letter = { char: string; stage: Stage; x: number; y: number; value: number; art: Phaser.GameObjects.Container; hit: Phaser.GameObjects.Zone; label: Phaser.GameObjects.Text };
 type Piece = Stroke & { art: Phaser.GameObjects.Container; hit: Phaser.GameObjects.Rectangle };
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const audio = new Audio();
+bindLanguageControl();
 let reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 try { const stored = localStorage.getItem('hunter-reduced'); if (stored !== null) reduced = stored === 'true'; } catch { /* Storage is optional. */ }
 const BACKGROUNDS: Record<Stage, number> = { glass: 0x000000, hunter: 0x190b2d, viola: 0x6b163f, whitney: 0x8e390f, elliott: 0xfffcf5, ending: 0x000000 };
 const STAGES: Stage[] = ['glass', 'hunter', 'viola', 'whitney', 'elliott'];
-const META: Record<Stage, [string, string, string]> = {
-  glass: ['00 / BREAK THE SURFACE', 'Everything starts with a crack.', 'Keep clicking close together. The glass is weaker than it looks.'],
-  hunter: ['01 / COLOUR THEORY', 'Put the rainbow in order.', 'Click a letter to change its colour. Red → orange → yellow → green → blue → indigo → violet → red. Any starting colour works.'],
-  viola: ['02 / A DIFFERENT ANGLE', 'Something’s a little sideways.', 'Click each letter to turn it a quarter of the way. Make them all upright.'],
-  whitney: ['03 / THE MIDDLE GROUND', 'Find the happy medium.', 'Click to resize: XS → SM → MD → LG → XL. All seven letters need to be MD.'],
-  elliott: ['04 / PICK UP THE PIECES', 'Put ELLIOTT back together.', 'Drag the strokes up from the floor. I and O stayed put. Close enough counts; matching pieces are interchangeable.'],
-  ending: ['05 / NICE WORK', '', '']
+const META: Record<Stage, [TranslationKey, TranslationKey, TranslationKey]> = {
+  glass: ['chapterGlass', 'instructionGlass', 'detailGlass'],
+  hunter: ['chapterHunter', 'instructionHunter', 'detailHunter'],
+  viola: ['chapterViola', 'instructionViola', 'detailViola'],
+  whitney: ['chapterWhitney', 'instructionWhitney', 'detailWhitney'],
+  elliott: ['chapterElliott', 'instructionElliott', 'detailElliott'],
+  ending: ['chapterEnding', 'empty', 'empty']
 };
 
 class Puzzle extends Phaser.Scene {
@@ -39,6 +41,8 @@ class Puzzle extends Phaser.Scene {
   private dragOffset: Point = { x: 0, y: 0 };
   private dragPiece?: Piece;
   private selectedPiece?: number;
+  private message?: Message;
+  private announcement?: Message;
 
   constructor() { super('puzzle'); }
   preload() {
@@ -48,10 +52,15 @@ class Puzzle extends Phaser.Scene {
   create() {
     this.stage = 'glass'; this.busy = false; this.letters = []; this.pieces = []; this.targets = []; this.cracks = []; this.shards = []; this.wrongAttempts = 0;
     this.selectedPiece = undefined; this.dragPiece = undefined;
+    this.message = undefined; this.announcement = undefined;
+    $('announcement').textContent = '';
+    $('interface').classList.remove('ending');
     this.cameras.main.setBackgroundColor('#000000');
     this.resize();
     this.scale.on('resize', this.resize, this);
     this.events.once('shutdown', () => this.scale.off('resize', this.resize, this));
+    const unbindLocale = onLocaleChange(() => this.refreshTranslations());
+    this.events.once('shutdown', unbindLocale);
     this.backdrop = this.add.rectangle(540, 360, 20000, 20000, 0x000000).setDepth(-100);
     this.cracksArt = this.add.graphics();
     this.shardArt = this.add.graphics().setDepth(20);
@@ -95,6 +104,7 @@ class Puzzle extends Phaser.Scene {
     });
     $('interface').hidden = true; $('replay').hidden = true; $('letter-controls').replaceChildren();
     this.updateUI();
+    document.querySelector('canvas')?.setAttribute('aria-label', t('canvasLabel'));
     if (import.meta.env.DEV) {
       // Read-only observations for browser tests. There are no stage-skip or solve hooks.
       Object.defineProperty(window, '__game', { configurable: true, get: () => this.snapshot() });
@@ -106,9 +116,10 @@ class Puzzle extends Phaser.Scene {
   }
   private snapshot() {
     return { stage: this.stage, busy: this.busy, cracks: this.cracks.length, wrongAttempts: this.wrongAttempts,
-      letters: this.letters.map(l => ({ char: l.char, x: l.x, y: l.y, value: l.value })),
+      letters: this.letters.map(l => ({ char: l.char, x: l.x, y: l.y, value: l.value, label: l.label.text })),
       pieces: this.pieces.map(p => ({ id: p.id, x: p.x, y: p.y, width: p.width, height: p.height, placed: !!p.placed })),
-      targets: this.targets.map(t => ({ ...t })), reduced, sound: audio.enabled,
+      targets: this.targets.map(t => ({ ...t })), reduced, sound: audio.enabled, locale: locale(),
+      texts: this.children.list.filter(o => o instanceof Phaser.GameObjects.Text).map(o => (o as Phaser.GameObjects.Text).text),
       camera: { zoom: this.cameras.main.zoom, width: this.scale.width, height: this.scale.height } };
   }
   update() {
@@ -120,18 +131,44 @@ class Puzzle extends Phaser.Scene {
       this.shardArt.strokePoints(shard.body.vertices as Phaser.Types.Math.Vector2Like[], true);
     }
   }
-  private updateUI(message?: string) {
+  private updateUI(key?: TranslationKey, params?: TranslationParams) {
+    this.message = key ? { key, params } : undefined;
     const [chapter, instruction, detail] = META[this.stage];
-    $('chapter').textContent = chapter;
-    $('instruction').textContent = message ?? instruction;
-    $('detail').textContent = detail;
-    $('interface').classList.toggle('light', this.stage === 'elliott');
+    $('chapter').textContent = t(chapter);
+    $('instruction').textContent = t(key ?? instruction, params);
+    $('detail').textContent = t(detail);
+    $('interface').classList.toggle('light', this.stage === 'elliott' || this.stage === 'ending');
     const current = STAGES.indexOf(this.stage);
-    $('progress').innerHTML = STAGES.map((s, i) => `<span class="step ${i < current ? 'done' : i === current ? 'current' : ''}" title="${s}" aria-label="${s}: ${i < current ? 'complete' : i === current ? 'current' : 'upcoming'}"></span>`).join('');
+    const names: TranslationKey[] = ['nameGlass', 'nameHunter', 'nameViola', 'nameWhitney', 'nameElliott'];
+    $('progress').replaceChildren(...STAGES.map((_s, i) => {
+      const step = document.createElement('span');
+      step.className = `step ${i < current ? 'done' : i === current ? 'current' : ''}`;
+      step.title = t(names[i]);
+      step.setAttribute('aria-label', `${t(names[i])}: ${t(i < current ? 'statusComplete' : i === current ? 'statusCurrent' : 'statusUpcoming')}`);
+      return step;
+    }));
+    $('sound').textContent = t(audio.enabled ? 'soundOn' : 'soundOff');
     $('effects').setAttribute('aria-pressed', String(reduced));
-    $('effects').textContent = reduced ? 'Effects reduced' : 'Reduce effects';
+    $('effects').textContent = t(reduced ? 'effectsReduced' : 'effectsNormal');
   }
-  private announce(text: string) { $('announcement').textContent = text; }
+  private announce(key: TranslationKey, params?: TranslationParams) {
+    this.announcement = { key, params }; $('announcement').textContent = t(key, params);
+  }
+  private localizedText(x: number, y: number, key: TranslationKey, style: Phaser.Types.GameObjects.Text.TextStyle) {
+    return this.add.text(x, y, t(key), style).setData('i18nKey', key);
+  }
+  private refreshTranslations() {
+    this.updateUI(this.message?.key, this.message?.params);
+    for (const l of this.letters) this.labelLetter(l, l.stage);
+    for (const child of this.children.list) {
+      if (child instanceof Phaser.GameObjects.Text && child.getData('i18nKey')) child.setText(t(child.getData('i18nKey')));
+    }
+    if (this.announcement) this.announce(this.announcement.key, this.announcement.params);
+    if (!this.busy) {
+      if (['hunter', 'viola', 'whitney'].includes(this.stage)) this.keyboardLetters();
+      else if (this.stage === 'elliott') this.pieceControls();
+    }
+  }
   crack(at: Point) {
     if (this.stage !== 'glass' || this.busy) return;
     $('interface').hidden = false;
@@ -160,11 +197,11 @@ class Puzzle extends Phaser.Scene {
     }
     this.ring(at.x, at.y, 0xece2ff, 24, .15);
     audio.crack();
-    this.announce(`${strength} nearby cracks. Keep clicking in this area.`);
+    this.announce('cracks', { count: strength });
     if (strength >= 11) this.breakGlass();
   }
   private breakGlass() {
-    this.busy = true; this.updateUI('There’s something on the other side.');
+    this.busy = true; this.updateUI('otherSide');
     this.cracksArt.clear();
     this.makeBackdrop('hunter', false);
     this.word('HUNTER', 'hunter');
@@ -208,7 +245,7 @@ class Puzzle extends Phaser.Scene {
     const line = this.add.graphics().lineStyle(1, ink, .12);
     line.lineBetween(165, 447, 915, 447);
     for (const x of [165, 915]) line.lineBetween(x, 442, x, 452);
-    this.add.text(540, 206, 'A LITTLE GAME ABOUT FIGURING THINGS OUT', { fontFamily: 'monospace', fontSize: '10px', color: this.stage === 'elliott' ? '#776c7d' : '#ffffff' }).setAlpha(.4).setOrigin(.5).setLetterSpacing(2);
+    this.localizedText(540, 206, 'tagline', { fontFamily: 'monospace', fontSize: '10px', color: this.stage === 'elliott' ? '#776c7d' : '#ffffff' }).setAlpha(.4).setOrigin(.5).setLetterSpacing(2);
   }
   private word(text: string, stage: Stage) {
     this.letters = [];
@@ -219,7 +256,7 @@ class Puzzle extends Phaser.Scene {
       const art = glyph(this, text[i]).setPosition(x, y).setDepth(2);
       const hit = this.add.zone(x, y, 103, 154).setDepth(5).setInteractive({ useHandCursor: true });
       const label = this.add.text(x, 416, '', { fontFamily: 'monospace', fontSize: '10px', color: '#ffffff' }).setOrigin(.5).setAlpha(.5);
-      const letter = { char: text[i], x, y, value: initial[i], art, hit, label };
+      const letter = { char: text[i], stage, x, y, value: initial[i], art, hit, label };
       this.letters.push(letter);
       this.renderLetter(letter, stage, false);
       hit.on('pointerdown', () => this.clickLetter(i));
@@ -230,9 +267,9 @@ class Puzzle extends Phaser.Scene {
   private renderLetter(l: Letter, stage = this.stage, animate = true) {
     this.tweens.killTweensOf(l.art);
     l.art.setX(l.x);
+    this.labelLetter(l, stage);
     if (stage === 'hunter') {
       paintGlyph(l.art, l.char, RAINBOW[l.value]);
-      l.label.setText(COLOUR_NAMES[l.value].toUpperCase());
       if (animate && !reduced) { l.art.setScale(.9); this.tweens.add({ targets: l.art, scale: 1, duration: 170, ease: 'Back.Out' }); }
     } else if (stage === 'viola') {
       paintGlyph(l.art, l.char, 0xffdfef);
@@ -241,13 +278,16 @@ class Puzzle extends Phaser.Scene {
         const from = l.art.angle;
         this.tweens.add({ targets: l.art, angle: from + 90, duration: 190, ease: 'Cubic.Out', onComplete: () => l.art.setAngle(target) });
       } else l.art.setAngle(target);
-      l.label.setText(l.value === 0 ? 'UPRIGHT' : 'TURN ↻');
     } else if (stage === 'whitney') {
       paintGlyph(l.art, l.char, 0xffdfa6);
       if (animate && !reduced) this.tweens.add({ targets: l.art, scale: SIZES[l.value], duration: 200, ease: 'Back.Out' });
       else l.art.setScale(SIZES[l.value]);
-      l.label.setText(SIZE_NAMES[l.value]);
     }
+  }
+  private labelLetter(l: Letter, stage: Stage) {
+    if (stage === 'hunter') l.label.setText(t(COLOUR_NAMES[l.value]).toLocaleUpperCase(locale()));
+    else if (stage === 'viola') l.label.setText(t(l.value === 0 ? 'upright' : 'turn'));
+    else if (stage === 'whitney') l.label.setText(t(SIZE_NAMES[l.value]));
   }
   clickLetter(index: number) {
     if (this.busy || !['hunter', 'viola', 'whitney'].includes(this.stage)) return;
@@ -262,7 +302,7 @@ class Puzzle extends Phaser.Scene {
       const result = sizeResult(values);
       if (result === 'correct') this.meltWhitney();
       else if (result === 'wrong') {
-        this.wrongAttempts++; audio.error(); this.updateUI('They match. But think medium.'); this.announce('Matching size, but incorrect. Make every letter medium.');
+        this.wrongAttempts++; audio.error(); this.updateUI('wrongSize'); this.announce('wrongSizeAnnouncement');
         if (!reduced) for (const letter of this.letters) this.tweens.add({ targets: letter.art, x: letter.x + 6, duration: 45, yoyo: true, repeat: 4 });
       } else this.updateUI();
     }
@@ -275,8 +315,8 @@ class Puzzle extends Phaser.Scene {
     if (this.busy) return;
     this.letters.forEach((l, i) => {
       const button = document.createElement('button');
-      const state = this.stage === 'hunter' ? COLOUR_NAMES[l.value] : this.stage === 'viola' ? (l.value === 0 ? 'upright' : `${l.value * 90} degrees`) : SIZE_NAMES[l.value];
-      button.textContent = `${l.char}, letter ${i + 1}: ${state}`; button.dataset.index = String(i);
+      const state = this.stage === 'hunter' ? t(COLOUR_NAMES[l.value]) : this.stage === 'viola' ? (l.value === 0 ? t('upright') : t('degrees', { angle: l.value * 90 })) : t(SIZE_NAMES[l.value]);
+      button.textContent = t('letterControl', { letter: l.char, index: i + 1, state }); button.dataset.index = String(i);
       button.addEventListener('click', () => this.clickLetter(i)); controls.append(button);
     });
     if (focused !== undefined) controls.querySelector<HTMLButtonElement>(`[data-index="${focused}"]`)?.focus();
@@ -293,7 +333,7 @@ class Puzzle extends Phaser.Scene {
     }
   }
   private explodeHunter() {
-    this.busy = true; this.keyboardLetters(); this.updateUI('That’s the spectrum.'); audio.boom();
+    this.busy = true; this.keyboardLetters(); this.updateUI('spectrum'); audio.boom();
     for (const l of this.letters) { l.art.setVisible(false); l.label.setVisible(false); this.particles(l.x, l.y, 28, [RAINBOW[l.value], 0xffebbb], 520, 1300); }
     for (let i = 0; i < (reduced ? 5 : 28); i++) {
       const smoke = this.add.circle(Phaser.Math.Between(280, 800), Phaser.Math.Between(280, 390), Phaser.Math.Between(30, 70), 0x34213c, .5).setDepth(14);
@@ -304,7 +344,7 @@ class Puzzle extends Phaser.Scene {
     this.time.delayedCall(reduced ? 650 : 1800, () => this.enter('viola'));
   }
   private celebrateViola() {
-    this.busy = true; this.keyboardLetters(); this.updateUI('A little magic goes a long way.'); audio.magic();
+    this.busy = true; this.keyboardLetters(); this.updateUI('magic'); audio.magic();
     for (const l of this.letters) {
       l.art.setVisible(false); l.label.setVisible(false);
       this.particles(l.x, l.y, 22, RAINBOW, 460, 1800);
@@ -320,7 +360,7 @@ class Puzzle extends Phaser.Scene {
     this.time.delayedCall(reduced ? 900 : 2600, () => this.enter('whitney'));
   }
   private meltWhitney() {
-    this.busy = true; this.keyboardLetters(); this.updateUI('Just right. Getting a little warm, though.'); audio.success();
+    this.busy = true; this.keyboardLetters(); this.updateUI('melting'); audio.success();
     for (const l of this.letters) {
       l.label.setVisible(false);
       for (let i = 0; i < 4; i++) {
@@ -389,8 +429,8 @@ class Puzzle extends Phaser.Scene {
         });
       }
     }
-    this.add.text(540, 485, 'THE PIECES ARE ALL HERE.', { fontFamily: 'monospace', fontSize: '10px', color: '#a299a4' }).setOrigin(.5).setLetterSpacing(2);
-    this.time.delayedCall(reduced ? 850 : 3050, () => { this.busy = false; this.pieceControls(); this.announce('Drag the twelve strokes to reconstruct ELLIOTT.'); });
+    this.localizedText(540, 485, 'allPieces', { fontFamily: 'monospace', fontSize: '10px', color: '#a299a4' }).setOrigin(.5).setLetterSpacing(2);
+    this.time.delayedCall(reduced ? 850 : 3050, () => { this.busy = false; this.pieceControls(); this.announce('dragInstructions'); });
   }
   private movePiece(piece: Piece, x: number, y: number) {
     piece.x = Phaser.Math.Clamp(x, 35, 1045); piece.y = Phaser.Math.Clamp(y, 150, 620);
@@ -411,12 +451,12 @@ class Puzzle extends Phaser.Scene {
       this.tweens.add({ targets: piece.art, x: target.x, y: target.y, duration: reduced ? 0 : 130 });
       audio.click(4);
       const count = this.targets.filter(t => t.placed).length;
-      this.announce(`${count} of ${this.targets.length} strokes placed.`);
-      this.updateUI(count === this.targets.length ? 'There you are, ELLIOTT.' : `${count} / ${this.targets.length} pieces back in place.`);
+      this.announce('strokesPlaced', { count, total: this.targets.length });
+      this.updateUI(count === this.targets.length ? 'rebuilt' : 'piecesPlaced', { count, total: this.targets.length });
       if (count === this.targets.length) { this.finish(); return; }
     } else {
       // Unmatched pieces remain exactly where the player released them.
-      audio.click(0); this.announce('Piece stays here. Try it closer to the name.');
+      audio.click(0); this.announce('pieceStays');
     }
     this.pieceControls();
   }
@@ -427,8 +467,8 @@ class Puzzle extends Phaser.Scene {
     this.pieces.forEach((p, i) => {
       const button = document.createElement('button');
       button.dataset.index = String(i);
-      button.textContent = `Piece ${i + 1}: ${p.width > p.height ? 'horizontal' : 'vertical'}${p.placed ? ', placed' : ''}`;
-      button.addEventListener('click', () => { this.selectedPiece = i; this.announce('Piece selected. Press Escape to leave the controls, then arrow keys to move; Shift for fine movement, Enter to place.'); button.blur(); });
+      button.textContent = t('pieceControl', { index: i + 1, direction: t(p.width > p.height ? 'horizontal' : 'vertical'), placed: p.placed ? t('placed') : '' });
+      button.addEventListener('click', () => { this.selectedPiece = i; this.announce('pieceSelected'); button.blur(); });
       controls.append(button);
     });
     if (focused !== undefined) controls.querySelector<HTMLButtonElement>(`[data-index="${focused}"]`)?.focus();
@@ -442,14 +482,15 @@ class Puzzle extends Phaser.Scene {
         this.time.delayedCall(reduced ? 300 : 1100, () => {
           this.stage = 'ending';
           const showMessage = () => {
-            const text = this.add.text(540, 330, 'Au travail,\nles jeunes !', { fontFamily: 'monospace', fontSize: '69px', fontStyle: 'bold', color: '#241727', align: 'center', lineSpacing: 10 }).setOrigin(.5).setDepth(51);
+            const text = this.localizedText(540, 330, 'endingMessage', { fontFamily: 'monospace', fontSize: '69px', fontStyle: 'bold', color: '#241727', align: 'center', lineSpacing: 10 }).setOrigin(.5).setDepth(51);
             if (reduced) { text.setAlpha(0); this.tweens.add({ targets: text, alpha: 1, duration: 800 }); }
             else {
               audio.startle(); text.setScale(.08);
               this.tweens.add({ targets: text, scale: 1.12, duration: 110, ease: 'Expo.Out', yoyo: true, hold: 60, onComplete: () => text.setScale(1) });
               this.cameras.main.shake(170, .014);
             }
-            this.announce('Au travail, les jeunes ! You completed all five puzzles.');
+            this.updateUI(); $('interface').classList.add('ending'); $('interface').hidden = false;
+            this.announce('endingAnnouncement');
             this.time.delayedCall(1100, () => { this.busy = false; $('replay').hidden = false; });
           };
           if (reduced) {
@@ -477,7 +518,7 @@ const game = new Phaser.Game({
 void game;
 $('sound').addEventListener('click', () => {
   audio.unlock(); audio.enabled = !audio.enabled;
-  $('sound').textContent = audio.enabled ? 'Sound on' : 'Sound off';
+  $('sound').textContent = t(audio.enabled ? 'soundOn' : 'soundOff');
   $('sound').setAttribute('aria-pressed', String(audio.enabled));
   if (audio.enabled) audio.click(3);
 });
@@ -485,7 +526,7 @@ $('effects').addEventListener('click', () => {
   reduced = !reduced;
   try { localStorage.setItem('hunter-reduced', String(reduced)); } catch { /* Nonessential preference. */ }
   $('effects').setAttribute('aria-pressed', String(reduced));
-  $('effects').textContent = reduced ? 'Effects reduced' : 'Reduce effects';
+  $('effects').textContent = t(reduced ? 'effectsReduced' : 'effectsNormal');
 });
 const dialog = $<HTMLDialogElement>('restart-dialog');
 $('restart').addEventListener('click', () => dialog.showModal());
@@ -493,4 +534,4 @@ $('cancel-restart').addEventListener('click', () => dialog.close());
 $('confirm-restart').addEventListener('click', () => { dialog.close(); scene.scene.restart(); });
 $('replay').addEventListener('click', () => scene.scene.restart());
 // Stop the browser from scrolling when dragging on touchscreens.
-document.querySelector('canvas')?.setAttribute('aria-label', 'Click to crack the black glass, or press Enter.');
+document.querySelector('canvas')?.setAttribute('aria-label', t('canvasLabel'));

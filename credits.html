@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="fr-CA">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Le jeu de Hunter — crédits</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <style>body{background:#190b2d;color:#f5eaff;font:15px/1.8 system-ui,sans-serif;max-width:680px;margin:50px auto;padding:0 24px}a{color:#ffc88d}h1{font-size:28px}li{margin:16px 0}button{float:right;font:inherit;cursor:pointer;padding:8px 15px;border:1px solid #8c769a;background:transparent;color:inherit;border-radius:4px}button:focus-visible,a:focus-visible{outline:2px solid #ffc88d;outline-offset:4px}h1{clear:both;padding-top:25px}</style>
+</head>
+<body data-page="credits">
+  <button id="language" lang="en" aria-label="Passer en anglais">English</button>
+  <h1 data-i18n="creditsHeading">Avec un petit coup de main.</h1>
+  <p data-i18n="creditsIntro">Le jeu de Hunter utilise les outils et les ressources suivants :</p>
+  <ul>
+    <li><a href="https://phaser.io/">Phaser 3</a><span data-i18n="creditsPhaser"> — moteur de jeu, interactions, animations et physique Matter. Licence MIT.</span></li>
+    <li><a href="https://github.com/d3/d3-delaunay">d3-delaunay</a><span data-i18n="creditsDelaunay"> — fragments de verre de Voronoï. Licence ISC.</span></li>
+    <li><a href="https://www.i18next.com/">i18next</a><span data-i18n="creditsI18next"> — gestion du français et de l’anglais. Licence MIT.</span></li>
+    <li><span data-i18n="creditsEmoji">Les émojis de licorne et d’arc-en-ciel sont conçus par </span><a href="https://openmoji.org/">OpenMoji</a><span data-i18n="creditsEmojiProject"> — un projet libre d’émojis et d’icônes. Sous licence </span><a href="https://creativecommons.org/licenses/by-sa/4.0/">CC BY-SA 4.0</a>. <span data-i18n="creditsUnmodified">Les fichiers SVG sont inchangés; le jeu les anime.</span> <a href="/assets/OPENMOJI-LICENSE.txt" data-i18n="fullLicense">Licence complète</a>.</li>
+    <li><a href="/THIRD-PARTY.txt" data-i18n="libraryNotices">Avis de licence des bibliothèques utilisées</a>.</li>
+  </ul>
+  <p data-i18n="creditsLocal">Le jeu génère ses lettres, fissures, particules et sons sur ton appareil. Aucun compte ni service externe n’est nécessaire pour jouer.</p>
+  <p><a href="/" data-i18n="backToGame">Retour au jeu</a></p>
+  <script type="module" src="/src/credits.ts"></script>
+</body>
+</html>
