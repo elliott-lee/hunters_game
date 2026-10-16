@@ -22,10 +22,10 @@ test('i18next renders French and English counts and the chosen ending', async ()
   assert.match(t('cracks', { count: 3 }), /^3 fissures rapprochées/);
   assert.equal(t('strokesPlaced', { count: 1, total: 12 }), '1 trait placé sur 12.');
   assert.equal(t('strokesPlaced', { count: 2, total: 12 }), '2 traits placés sur 12.');
-  assert.equal(t('endingMessage'), 'Au travail,\nles jeunes !');
+  assert.equal(t('endingMessage'), 'AU TRAVAIL,\nLES JEUNES !');
   await changeLocale('en');
   assert.equal(t('cracks', { count: 1 }), '1 crack. Keep clicking in this area.');
   assert.match(t('cracks', { count: 3 }), /^3 nearby cracks/);
-  assert.equal(t('endingMessage'), 'Back to work,\nkids!');
+  assert.equal(t('endingMessage'), 'GET BACK TO WORK,\nKIDS!');
   await changeLocale('fr-CA');
 });

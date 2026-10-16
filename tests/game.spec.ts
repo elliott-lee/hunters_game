@@ -1,10 +1,11 @@
 import { test, expect, type Page } from '@playwright/test';
 
 type Snapshot = {
-  stage: string; busy: boolean; cracks: number; wrongAttempts: number; reduced: boolean; sound: boolean; locale: string; texts: string[];
+  stage: string; busy: boolean; cracks: number; wrongAttempts: number; reduced: boolean; sound: boolean; locale: string; texts: string[]; endingFade: number;
   letters: { char: string; x: number; y: number; value: number; label: string }[];
   pieces: { id: number; x: number; y: number; width: number; height: number; placed: boolean }[];
   targets: { id: number; x: number; y: number; width: number; height: number; placed?: boolean }[];
+  clouds: { char: string; x: number; y: number; cloudX: number; cloudY: number; elapsed: number; opacity: number; cloudOpacity: number; revealed: boolean; vx: number; vy: number; dragging: boolean }[];
   camera: { zoom: number; width: number; height: number };
 };
 const state = (page: Page) => page.evaluate(() => (window as unknown as { __game: Snapshot }).__game);
@@ -29,10 +30,118 @@ async function open(page: Page) {
   await expect.poll(async () => (await state(page))?.stage).toBe('glass');
 }
 
+async function shakeCloud(page: Page, index: number, milliseconds: number) {
+  const snapshot = await state(page), c = snapshot.clouds[index], camera = snapshot.camera;
+  for (let elapsed = 0; elapsed < milliseconds; elapsed += 80) {
+    const point = { x: camera.width / 2 + (c.cloudX + (elapsed / 80 % 2 ? 18 : -18) - 540) * camera.zoom,
+      y: camera.height / 2 + (c.cloudY - 360) * camera.zoom };
+    await page.mouse.move(point.x, point.y);
+    await page.clock.runFor(80);
+  }
+}
+
+async function gentleDrop(page: Page, index: number, x: number, y: number) {
+  const c = (await state(page)).clouds[index];
+  const from = await at(page, c.x, c.y), to = await at(page, x, y);
+  await page.mouse.move(from.x, from.y); await page.mouse.down();
+  await page.clock.runFor(20);
+  await page.mouse.move(to.x, to.y, { steps: 10 });
+  await page.clock.runFor(180); await page.mouse.up(); await page.clock.runFor(50);
+}
+
+async function finishBrixton(page: Page, checkMechanics = false) {
+  await ready(page, 'brixton');
+  const now = await page.evaluate(() => Date.now());
+  await page.clock.pauseAt(now + 100);
+  expect((await state(page)).clouds).toHaveLength(7);
+  expect((await state(page)).clouds.map(c => c.char).sort().join('')).toBe('BINORTX');
+  await page.screenshot({ path: 'test-results/05-clouds.png' });
+  if (checkMechanics) {
+    // Hovering earns nothing. Only back-and-forth shaking counts.
+    const c = (await state(page)).clouds[0], point = await at(page, c.cloudX, c.cloudY);
+    await page.mouse.move(point.x, point.y); await page.clock.runFor(2300);
+    expect((await state(page)).clouds[0].elapsed).toBe(0);
+    await shakeCloud(page, 0, 1600);
+    expect((await state(page)).clouds[0].opacity).toBe(0);
+    await shakeCloud(page, 0, 800);
+    expect((await state(page)).clouds[0].opacity).toBeGreaterThan(0);
+    await shakeCloud(page, 0, 2800);
+    const half = (await state(page)).clouds[0];
+    expect(half.opacity).toBeGreaterThanOrEqual(.48); expect(half.opacity).toBeLessThan(.54);
+    expect(half.cloudOpacity + half.opacity).toBeCloseTo(1);
+    // Language changes retain the current shake progress.
+    const before = half.elapsed;
+    await page.locator('#language').focus(); await page.keyboard.press('Enter'); await page.clock.runFor(30);
+    expect((await state(page)).clouds[0].elapsed).toBeGreaterThanOrEqual(before);
+    await page.keyboard.press('Enter');
+    await page.clock.runFor(600);
+    const rewinding = (await state(page)).clouds[0].elapsed;
+    expect(rewinding).toBeGreaterThan(0);
+    await page.clock.runFor(1000);
+    expect(rewinding - (await state(page)).clouds[0].elapsed).toBeGreaterThan(960);
+    expect(rewinding - (await state(page)).clouds[0].elapsed).toBeLessThan(1040);
+    await shakeCloud(page, 0, 1000);
+    const leaving = (await state(page)).clouds[0].elapsed;
+    const outside = await at(page, 80, 180); await page.mouse.move(outside.x, outside.y); await page.clock.runFor(30);
+    expect((await state(page)).clouds[0].elapsed).toBeLessThan(leaving);
+    expect((await state(page)).clouds[0].elapsed).toBeGreaterThan(0);
+  }
+  for (let i = 0; i < 7; i++) {
+    await shakeCloud(page, i, 10400);
+    expect((await state(page)).clouds[i].revealed).toBe(true);
+    expect((await state(page)).clouds[i].opacity).toBe(1);
+  }
+  await page.screenshot({ path: 'test-results/06-slippery-letters.png' });
+  if (checkMechanics) {
+    // A quick rightward release gives a letter rightward momentum, even after it slept.
+    await page.clock.runFor(1800);
+    let c = (await state(page)).clouds[0];
+    const from = await at(page, c.x, c.y), start = await at(page, 350, 500), end = await at(page, 400, 500);
+    await page.mouse.move(from.x, from.y); await page.mouse.down(); await page.clock.runFor(20);
+    await page.mouse.move(start.x, start.y); await page.clock.runFor(40);
+    await page.mouse.move(end.x, end.y); await page.clock.runFor(20); await page.mouse.up();
+    await page.clock.runFor(30); c = (await state(page)).clouds[0];
+    expect(c.vx).toBeGreaterThan(0);
+    const dropped = c.x; await page.clock.runFor(150);
+    expect((await state(page)).clouds[0].x).toBeGreaterThan(dropped + 10);
+    // A gentle drop stays put; a complete row in the wrong order does not win.
+    for (let i = 0; i < 7; i++) {
+      const index = (await state(page)).clouds.findIndex(c => c.char === 'N O T X I R B'.split(' ')[i]);
+      await gentleDrop(page, index, 204 + i * 112, 555);
+    }
+    await page.clock.runFor(1000);
+    expect((await state(page)).stage).toBe('brixton'); expect((await state(page)).busy).toBe(false);
+    expect((await state(page)).clouds.every(c => Math.abs(c.vx) < .1 && Math.abs(c.vy) < .1)).toBe(true);
+  }
+  // Move to separate staging slots first, avoiding overlaps with unplaced letters.
+  for (let i = 0; i < 7; i++) await gentleDrop(page, i, 150 + i * 125, 280);
+  for (let i = 0; i < 7; i++) {
+    const index = (await state(page)).clouds.findIndex(c => c.char === 'BRIXTON'[i]);
+    await gentleDrop(page, index, 204 + i * 112, 555 + (i % 2 ? 5 : -5));
+  }
+  await page.screenshot({ path: 'test-results/07-brixton-row.png' });
+  if (checkMechanics) {
+    await page.clock.runFor(5200);
+    expect((await state(page)).endingFade).toBe(1);
+    await page.screenshot({ path: 'test-results/08-white-before-ending.png' });
+    const tones = await page.evaluate(() => (window as unknown as { __toneCount: number }).__toneCount);
+    await page.clock.runFor(4800);
+    expect(await page.evaluate(() => (window as unknown as { __toneCount: number }).__toneCount)).toBe(tones);
+  } else await page.clock.runFor(10000);
+  await page.clock.resume();
+}
+
 test('complete the game through real clicks and drags, including error and wraparound', async ({ page }) => {
+  test.setTimeout(180000);
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.addInitScript(() => localStorage.setItem('hunter-language', 'en'));
+  await page.addInitScript(() => {
+    const counter = window as unknown as { __toneCount: number }; counter.__toneCount = 0;
+    const original = AudioContext.prototype.createOscillator;
+    AudioContext.prototype.createOscillator = function () { counter.__toneCount++; return original.call(this); };
+  });
+  await page.clock.install();
   await open(page);
   await expect(page.locator('#interface')).toBeHidden();
   await expect(page.locator('canvas')).toBeVisible();
@@ -76,10 +185,11 @@ test('complete the game through real clicks and drags, including error and wrapa
     await page.waitForTimeout(150);
   }
   expect((await state(page)).targets.filter(t => t.placed)).toHaveLength(12);
+  await finishBrixton(page, true);
   await ready(page, 'ending');
-  await page.screenshot({ path: 'test-results/05-ending.png' });
-  await expect(page.locator('#announcement')).toContainText('Back to work, kids!');
-  expect((await state(page)).texts).toContain('Back to work,\nkids!');
+  await page.screenshot({ path: 'test-results/09-ending.png' });
+  await expect(page.locator('#announcement')).toContainText('GET BACK TO WORK, KIDS!');
+  expect((await state(page)).texts).toContain('GET BACK TO WORK,\nKIDS!');
   await page.getByRole('button', { name: 'Play again' }).click();
   await ready(page, 'glass');
   await expect(page.locator('#interface')).toBeHidden();
@@ -114,8 +224,10 @@ test('touch input, resize, settings, keyboard letters, and restart work', async 
 });
 
 test('touch dragging reconstructs the word and reduced effects reaches a soft ending', async ({ browser }) => {
+  test.setTimeout(180000);
   const context = await browser.newContext({ viewport: { width: 1024, height: 768 }, hasTouch: true, reducedMotion: 'reduce' });
   const page = await context.newPage();
+  await page.clock.install();
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
   await open(page);
@@ -143,12 +255,13 @@ test('touch dragging reconstructs the word and reduced effects reaches a soft en
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
   }
   expect((await state(page)).targets.filter(t => t.placed)).toHaveLength(12);
+  await finishBrixton(page);
   await ready(page, 'ending');
   await expect(page.getByRole('button', { name: 'Rejouer' })).toBeVisible();
-  expect((await state(page)).texts).toContain('Au travail,\nles jeunes !');
+  expect((await state(page)).texts).toContain('AU TRAVAIL,\nLES JEUNES !');
   await page.locator('#language').click();
   await expect(page.locator('html')).toHaveAttribute('lang', 'en');
-  expect((await state(page)).texts).toContain('Back to work,\nkids!');
+  expect((await state(page)).texts).toContain('GET BACK TO WORK,\nKIDS!');
   expect((await state(page)).stage).toBe('ending');
   await expect(page.getByRole('button', { name: 'Play again' })).toBeVisible();
   expect(errors).toEqual([]);

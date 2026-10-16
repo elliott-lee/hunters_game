@@ -25,7 +25,6 @@ export class Audio {
   success() { [0, 4, 7, 12].forEach((note, i) => this.tone(330 * 2 ** (note / 12), .36, 'triangle', i * .09)); }
   boom() { this.noise(1.15, .3, 900); this.tone(110, .7, 'sine', 0, 30); }
   magic() { for (let i = 0; i < 12; i++) this.tone(420 * 2 ** ((i % 7) / 7), .3, 'sine', i * .055); }
-  startle() { this.noise(.18, .26, 1900); this.tone(155, .23, 'sawtooth', 0, 70); }
   private noise(length: number, volume: number, frequency: number) {
     if (!this.enabled || !this.context) return;
     const c = this.context, buffer = c.createBuffer(1, c.sampleRate * length, c.sampleRate);

@@ -1,12 +1,13 @@
 import Phaser from 'phaser';
 import { Delaunay } from 'd3-delaunay';
 import { Audio } from './audio';
+import { BrixtonLevel } from './brixton';
 import { glyph, paintGlyph } from './glyphs';
 import { RAINBOW, COLOUR_NAMES, SIZES, SIZE_NAMES, rainbowSolved, rotationsSolved, sizeResult, nearbyCracks, matchingStroke, type Point, type Stroke } from './rules';
 import { t, locale, bindLanguageControl, onLocaleChange, type TranslationKey, type TranslationParams, type Message } from './i18n';
 import './style.css';
 
-type Stage = 'glass' | 'hunter' | 'viola' | 'whitney' | 'elliott' | 'ending';
+type Stage = 'glass' | 'hunter' | 'viola' | 'whitney' | 'elliott' | 'brixton' | 'ending';
 type Letter = { char: string; stage: Stage; x: number; y: number; value: number; art: Phaser.GameObjects.Container; hit: Phaser.GameObjects.Zone; label: Phaser.GameObjects.Text };
 type Piece = Stroke & { art: Phaser.GameObjects.Container; hit: Phaser.GameObjects.Rectangle };
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -14,14 +15,15 @@ const audio = new Audio();
 bindLanguageControl();
 let reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 try { const stored = localStorage.getItem('hunter-reduced'); if (stored !== null) reduced = stored === 'true'; } catch { /* Storage is optional. */ }
-const BACKGROUNDS: Record<Stage, number> = { glass: 0x000000, hunter: 0x190b2d, viola: 0x6b163f, whitney: 0x8e390f, elliott: 0xfffcf5, ending: 0x000000 };
-const STAGES: Stage[] = ['glass', 'hunter', 'viola', 'whitney', 'elliott'];
+const BACKGROUNDS: Record<Stage, number> = { glass: 0x000000, hunter: 0x190b2d, viola: 0x6b163f, whitney: 0x8e390f, elliott: 0xfffcf5, brixton: 0xeaf3f8, ending: 0xffffff };
+const STAGES: Stage[] = ['glass', 'hunter', 'viola', 'whitney', 'elliott', 'brixton'];
 const META: Record<Stage, [TranslationKey, TranslationKey, TranslationKey]> = {
   glass: ['chapterGlass', 'instructionGlass', 'detailGlass'],
   hunter: ['chapterHunter', 'instructionHunter', 'detailHunter'],
   viola: ['chapterViola', 'instructionViola', 'detailViola'],
   whitney: ['chapterWhitney', 'instructionWhitney', 'detailWhitney'],
   elliott: ['chapterElliott', 'instructionElliott', 'detailElliott'],
+  brixton: ['chapterBrixton', 'instructionBrixton', 'detailBrixton'],
   ending: ['chapterEnding', 'empty', 'empty']
 };
 
@@ -43,6 +45,8 @@ class Puzzle extends Phaser.Scene {
   private selectedPiece?: number;
   private message?: Message;
   private announcement?: Message;
+  private fixedElliott: { art: Phaser.GameObjects.Container; letter: number }[] = [];
+  private brixton?: BrixtonLevel;
 
   constructor() { super('puzzle'); }
   preload() {
@@ -52,6 +56,7 @@ class Puzzle extends Phaser.Scene {
   create() {
     this.stage = 'glass'; this.busy = false; this.letters = []; this.pieces = []; this.targets = []; this.cracks = []; this.shards = []; this.wrongAttempts = 0;
     this.selectedPiece = undefined; this.dragPiece = undefined;
+    this.fixedElliott = []; this.brixton = undefined;
     this.message = undefined; this.announcement = undefined;
     $('announcement').textContent = '';
     $('interface').classList.remove('ending');
@@ -59,6 +64,7 @@ class Puzzle extends Phaser.Scene {
     this.resize();
     this.scale.on('resize', this.resize, this);
     this.events.once('shutdown', () => this.scale.off('resize', this.resize, this));
+    this.events.once('shutdown', () => { this.brixton?.destroy(); this.brixton = undefined; });
     const unbindLocale = onLocaleChange(() => this.refreshTranslations());
     this.events.once('shutdown', unbindLocale);
     this.backdrop = this.add.rectangle(540, 360, 20000, 20000, 0x000000).setDepth(-100);
@@ -119,10 +125,13 @@ class Puzzle extends Phaser.Scene {
       letters: this.letters.map(l => ({ char: l.char, x: l.x, y: l.y, value: l.value, label: l.label.text })),
       pieces: this.pieces.map(p => ({ id: p.id, x: p.x, y: p.y, width: p.width, height: p.height, placed: !!p.placed })),
       targets: this.targets.map(t => ({ ...t })), reduced, sound: audio.enabled, locale: locale(),
+      clouds: this.brixton?.snapshot() ?? [],
+      endingFade: (this.children.list.find(o => o.getData('endingCurtain')) as Phaser.GameObjects.Rectangle | undefined)?.alpha ?? 0,
       texts: this.children.list.filter(o => o instanceof Phaser.GameObjects.Text).map(o => (o as Phaser.GameObjects.Text).text),
       camera: { zoom: this.cameras.main.zoom, width: this.scale.width, height: this.scale.height } };
   }
-  update() {
+  update(_time: number, delta: number) {
+    if (this.stage === 'brixton') this.brixton?.update(delta, document.hidden || !document.hasFocus() || $('restart-dialog').hasAttribute('open'));
     if (!this.shardArt) return;
     this.shardArt.clear();
     for (const shard of this.shards) {
@@ -136,10 +145,10 @@ class Puzzle extends Phaser.Scene {
     const [chapter, instruction, detail] = META[this.stage];
     $('chapter').textContent = t(chapter);
     $('instruction').textContent = t(key ?? instruction, params);
-    $('detail').textContent = t(detail);
-    $('interface').classList.toggle('light', this.stage === 'elliott' || this.stage === 'ending');
-    const current = STAGES.indexOf(this.stage);
-    const names: TranslationKey[] = ['nameGlass', 'nameHunter', 'nameViola', 'nameWhitney', 'nameElliott'];
+    $('detail').textContent = t(this.stage === 'brixton' && this.brixton?.arranging ? 'detailBrixtonArrange' : detail);
+    $('interface').classList.toggle('light', ['elliott', 'brixton', 'ending'].includes(this.stage));
+    const current = this.stage === 'ending' ? STAGES.length : STAGES.indexOf(this.stage);
+    const names: TranslationKey[] = ['nameGlass', 'nameHunter', 'nameViola', 'nameWhitney', 'nameElliott', 'nameBrixton'];
     $('progress').replaceChildren(...STAGES.map((_s, i) => {
       const step = document.createElement('span');
       step.className = `step ${i < current ? 'done' : i === current ? 'current' : ''}`;
@@ -167,6 +176,7 @@ class Puzzle extends Phaser.Scene {
     if (!this.busy) {
       if (['hunter', 'viola', 'whitney'].includes(this.stage)) this.keyboardLetters();
       else if (this.stage === 'elliott') this.pieceControls();
+      else if (this.stage === 'brixton') this.brixton?.refreshTranslations();
     }
   }
   crack(at: Point) {
@@ -380,11 +390,21 @@ class Puzzle extends Phaser.Scene {
     });
   }
   private enter(stage: Stage) {
+    this.brixton?.destroy(); this.brixton = undefined;
     this.tweens.killAll(); this.time.removeAllEvents(); this.clearShards();
     for (const object of [...this.children.list]) if (![this.backdrop, this.cracksArt, this.shardArt].includes(object as never)) object.destroy();
-    this.stage = stage; this.busy = true; this.letters = []; this.makeBackdrop(stage); this.updateUI(); $('letter-controls').replaceChildren();
-    this.scenery();
+    this.stage = stage; this.busy = true; this.letters = []; this.pieces = []; this.targets = []; this.fixedElliott = []; this.makeBackdrop(stage); this.updateUI(); $('letter-controls').replaceChildren();
+    if (stage !== 'brixton') this.scenery();
     if (stage === 'elliott') this.reconstruction();
+    else if (stage === 'brixton') {
+      this.brixton = new BrixtonLevel(this, audio, {
+        reduced: () => reduced,
+        ready: () => { this.busy = false; this.announce('cloudInstructions'); },
+        arrange: () => { this.updateUI('arrangeBrixton'); this.announce('detailBrixtonArrange'); },
+        complete: () => this.finish(),
+        announce: (key, params) => this.announce(key, params),
+      });
+    }
     else {
       this.word(stage.toUpperCase(), stage);
       for (const l of this.letters) { l.art.setAlpha(0); this.tweens.add({ targets: l.art, alpha: 1, duration: 550 }); }
@@ -400,6 +420,7 @@ class Puzzle extends Phaser.Scene {
       if (word[letter] === 'I' || word[letter] === 'O') {
         const fixed = glyph(this, word[letter]).setPosition(x, y);
         paintGlyph(fixed, word[letter], 0x302438);
+        this.fixedElliott.push({ art: fixed, letter });
         continue;
       }
       const shapes = word[letter] === 'E'
@@ -453,7 +474,7 @@ class Puzzle extends Phaser.Scene {
       const count = this.targets.filter(t => t.placed).length;
       this.announce('strokesPlaced', { count, total: this.targets.length });
       this.updateUI(count === this.targets.length ? 'rebuilt' : 'piecesPlaced', { count, total: this.targets.length });
-      if (count === this.targets.length) { this.finish(); return; }
+      if (count === this.targets.length) { this.crumpleElliott(); return; }
     } else {
       // Unmatched pieces remain exactly where the player released them.
       audio.click(0); this.announce('pieceStays');
@@ -473,11 +494,38 @@ class Puzzle extends Phaser.Scene {
     });
     if (focused !== undefined) controls.querySelector<HTMLButtonElement>(`[data-index="${focused}"]`)?.focus();
   }
+  private crumpleElliott() {
+    this.busy = true; this.selectedPiece = undefined; $('letter-controls').replaceChildren(); audio.success();
+    for (const piece of this.pieces) piece.hit.disableInteractive();
+    this.time.delayedCall(reduced ? 400 : 850, () => {
+      for (const object of this.children.list) if (object instanceof Phaser.GameObjects.Text) object.setAlpha(0);
+      for (let i = 0; i < 7; i++) {
+        const x = 540 + (i - 3) * 112;
+        const originals = [...this.pieces.filter(p => p.letter === i).map(p => p.art), ...this.fixedElliott.filter(p => p.letter === i).map(p => p.art)];
+        this.tweens.add({ targets: originals, x, y: 300, scaleX: .12, scaleY: .18, angle: reduced ? 0 : 55, duration: 420, onComplete: () => originals.forEach(art => art.setVisible(false)) });
+        const wad = this.add.container(x, 300).setDepth(15).setScale(.1).setAlpha(0);
+        const paper = this.add.graphics().fillStyle(0xf2efe8).lineStyle(2, 0x7b7483);
+        const outline = [{ x: -24, y: -14 }, { x: -8, y: -27 }, { x: 17, y: -23 }, { x: 29, y: -4 }, { x: 19, y: 22 }, { x: -8, y: 26 }, { x: -27, y: 9 }];
+        paper.fillPoints(outline, true); paper.strokePoints(outline, true);
+        paper.lineStyle(1, 0xaaa1ad).lineBetween(-24, -14, 5, 2).lineBetween(5, 2, 17, -23).lineBetween(5, 2, 19, 22).lineBetween(-8, 26, -10, -5).lineBetween(-10, -5, 29, -4);
+        wad.add(paper);
+        this.tweens.add({ targets: wad, alpha: 1, scale: 1, duration: 420 });
+        this.time.delayedCall(500, () => {
+          const angle = i / 7 * Math.PI * 2 - Math.PI / 2;
+          this.tweens.add({ targets: wad, x: x + Math.cos(angle) * 1650, y: 300 + Math.sin(angle) * 1200,
+            angle: reduced ? 0 : (i % 2 ? 650 : -650), alpha: reduced ? 0 : 1,
+            duration: reduced ? 350 : 1050, ease: 'Quad.In', onComplete: () => wad.destroy() });
+        });
+      }
+      audio.crack();
+      this.time.delayedCall(reduced ? 950 : 1650, () => this.enter('brixton'));
+    });
+  }
   private finish() {
     this.busy = true; this.selectedPiece = undefined; $('letter-controls').replaceChildren(); audio.success();
     this.time.delayedCall(reduced ? 500 : 1400, () => {
       $('interface').hidden = true;
-      const curtain = this.add.rectangle(540, 360, 20000, 20000, 0x000000, 0).setDepth(50);
+      const curtain = this.add.rectangle(540, 360, 20000, 20000, 0xffffff).setAlpha(0).setDepth(50).setData('endingCurtain', true);
       this.tweens.add({ targets: curtain, alpha: 1, duration: reduced ? 900 : 2800, onComplete: () => {
         this.time.delayedCall(reduced ? 300 : 1100, () => {
           this.stage = 'ending';
@@ -485,7 +533,7 @@ class Puzzle extends Phaser.Scene {
             const text = this.localizedText(540, 330, 'endingMessage', { fontFamily: 'monospace', fontSize: '69px', fontStyle: 'bold', color: '#241727', align: 'center', lineSpacing: 10 }).setOrigin(.5).setDepth(51);
             if (reduced) { text.setAlpha(0); this.tweens.add({ targets: text, alpha: 1, duration: 800 }); }
             else {
-              audio.startle(); text.setScale(.08);
+              text.setScale(.08);
               this.tweens.add({ targets: text, scale: 1.12, duration: 110, ease: 'Expo.Out', yoyo: true, hold: 60, onComplete: () => text.setScale(1) });
               this.cameras.main.shake(170, .014);
             }
@@ -493,10 +541,7 @@ class Puzzle extends Phaser.Scene {
             this.announce('endingAnnouncement');
             this.time.delayedCall(1100, () => { this.busy = false; $('replay').hidden = false; });
           };
-          if (reduced) {
-            const white = this.add.rectangle(540, 360, 20000, 20000, 0xffffff, 0).setDepth(50);
-            this.tweens.add({ targets: white, alpha: 1, duration: 1400, onComplete: showMessage });
-          } else { curtain.setFillStyle(0xffffff); showMessage(); }
+          showMessage();
         });
       } });
     });
