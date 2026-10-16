@@ -59,7 +59,7 @@ export default {
   instructionBrixton: 'Secoue les nuages. Trouve les lettres.',
   detailBrixton: 'Bouge le curseur de gauche à droite sur un nuage pendant 10 secondes, sans cliquer. Quand tu arrêtes, son compteur recule d’une seconde par seconde. Les lettres révélées restent.',
   arrangeBrixton: 'Aligne les lettres pour écrire BRIXTON.',
-  detailBrixtonArrange: 'Fais glisser les lettres pour former une rangée. Elles continuent de glisser si tu bouges en les lâchant. Arrête brièvement le curseur avant de relâcher pour les immobiliser.',
+  detailBrixtonArrange: 'Écris BRIXTON sur une ligne horizontale n’importe où dans la page. Tous les espacements sont acceptés. Arrête brièvement le curseur avant de relâcher pour immobiliser une lettre.',
   cloudTiming: '2 s : premier aperçu · 5 s : à moitié révélée · 10 s : entièrement révélée',
   cloudSeconds: '{{seconds}} / 10 s',
   cloudInstructions: 'Secoue chaque nuage de gauche à droite pour révéler sa lettre.',

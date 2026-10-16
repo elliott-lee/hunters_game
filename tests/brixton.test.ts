@@ -47,11 +47,20 @@ test('release momentum follows the recent pointer direction and vanishes after s
   assert.deepEqual(releaseVelocity(samples, 210), { x: 0, y: 0 });
   assert.deepEqual(releaseVelocity([{ x: 0, y: 0, time: 0 }], 0), { x: 0, y: 0 });
 });
-test('BRIXTON must be revealed, still, ordered, separated, and lined up in one row', () => {
+test('BRIXTON must be revealed, still, ordered, and lined up in one row', () => {
   const row: SlidingLetter[] = [...'BRIXTON'].map((char, i) => ({ char, x: 200 + i * 110, y: 550, vx: 0, vy: 0, revealed: true, dragging: false }));
   assert.equal(brixtonSolved([...row].reverse()), true);
   for (const change of [{ revealed: false }, { dragging: true }, { vx: 30 }, { char: 'X' }, { y: 580 }, { x: row[1].x }]) {
     assert.equal(brixtonSolved(row.map((l, i) => i === 0 ? { ...l, ...change } : l)), false);
   }
   assert.equal(brixtonSolved(row.slice(1)), false);
+});
+
+test('a horizontal BRIXTON row accepts any location and tight, wide, or uneven spacing', () => {
+  for (const positions of [[0, 1, 2, 3, 4, 5, 6], [0, 250, 500, 750, 1000, 1250, 1500], [55, 145, 250, 420, 680, 880, 1055]]) {
+    for (const xOffset of [-200, 0, 300]) for (const y of [-100, 140, 550, 900]) {
+      const row: SlidingLetter[] = [...'BRIXTON'].map((char, i) => ({ char, x: xOffset + positions[i], y: y + (i % 2 ? 5 : -5), vx: 0, vy: 0, revealed: true, dragging: false }));
+      assert.equal(brixtonSolved([...row].reverse()), true, `${positions}, offset ${xOffset}, y ${y}`);
+    }
+  }
 });

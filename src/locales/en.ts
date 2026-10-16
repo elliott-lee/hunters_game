@@ -60,7 +60,7 @@ export default {
   instructionBrixton: 'Shake the clouds. Find the letters.',
   detailBrixton: 'Move your cursor back and forth over one cloud for 10 seconds. No clicking needed. When you stop, its timer rewinds one second per second. Revealed letters stay.',
   arrangeBrixton: 'Line up the letters to spell BRIXTON.',
-  detailBrixtonArrange: 'Drag the letters into a row. Moving when you let go makes them slide. Stop your cursor briefly before releasing to keep a letter still.',
+  detailBrixtonArrange: 'Spell BRIXTON in a horizontal line anywhere on the page. Any spacing works. Stop your cursor briefly before releasing to keep a letter still.',
   cloudTiming: '2s: first glimpse · 5s: half revealed · 10s: fully revealed',
   cloudSeconds: '{{seconds}} / 10 s',
   cloudInstructions: 'Shake each cloud back and forth to reveal its letter.',

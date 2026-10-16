@@ -133,7 +133,12 @@ async function finishBrixton(page: Page, checkMechanics = false) {
   for (let i = 0; i < 7; i++) await gentleDrop(page, i, 150 + i * 125, 280);
   for (let i = 0; i < 7; i++) {
     const index = (await state(page)).clouds.findIndex(c => c.char === 'BRIXTON'[i]);
-    await gentleDrop(page, index, 204 + i * 112, 555 + (i % 2 ? 5 : -5));
+    const x = mode === 'hard' ? [55, 145, 250, 420, 680, 880, 1055][i] : 204 + i * 112;
+    const y = (mode === 'hard' ? 140 : 555) + (i % 2 ? 5 : -5);
+    await gentleDrop(page, index, x, y);
+    const dropped = (await state(page)).clouds[index];
+    // Pointer coordinates round to screen pixels before camera scaling.
+    expect(Math.abs(dropped.x - x)).toBeLessThan(2); expect(Math.abs(dropped.y - y)).toBeLessThan(2);
   }
   await page.screenshot({ path: 'test-results/07-brixton-row.png' });
   if (checkMechanics) {

@@ -82,5 +82,7 @@ export function brixtonSolved(letters: SlidingLetter[]): boolean {
   const row = [...letters].sort((a, b) => a.x - b.x);
   if (row.map(l => l.char).join('') !== BRIXTON) return false;
   if (Math.max(...row.map(l => l.y)) - Math.min(...row.map(l => l.y)) > 24) return false;
-  return row.every((l, i) => i === 0 || (l.x - row[i - 1].x >= 72 && l.x - row[i - 1].x <= 160));
+  // Any spacing is valid, including overlapping glyphs. Distinct horizontal
+  // positions establish the word's left-to-right order without a hidden grid.
+  return row.every((l, i) => i === 0 || l.x > row[i - 1].x);
 }

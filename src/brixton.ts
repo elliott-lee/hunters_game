@@ -117,7 +117,7 @@ export class BrixtonLevel {
       }
       if (this.arranging && this.dragging !== c) {
         // Matter supplies momentum and friction; these limits keep every letter reachable.
-        const x = Phaser.Math.Clamp(c.body.position.x, 65, 1015), y = Phaser.Math.Clamp(c.body.position.y, 220, 590);
+        const { x, y } = this.constrain(c.body.position.x, c.body.position.y);
         if (x !== c.body.position.x || y !== c.body.position.y) {
           const velocity = { x: c.body.velocity.x * (x === c.body.position.x ? 1 : -.25), y: c.body.velocity.y * (y === c.body.position.y ? 1 : -.25) };
           this.scene.matter.body.setPosition(c.body, { x, y }); this.scene.matter.body.setVelocity(c.body, velocity);
@@ -202,8 +202,14 @@ export class BrixtonLevel {
   }
 
   private position(c: Cloud, x: number, y: number) {
-    const at = { x: Phaser.Math.Clamp(x, 65, 1015), y: Phaser.Math.Clamp(y, 220, 590) };
+    const at = this.constrain(x, y);
     this.scene.matter.body.setPosition(c.body, at); c.letter.setPosition(at.x, at.y);
+  }
+
+  private constrain(x: number, y: number): Point {
+    const view = this.scene.cameras.main.worldView;
+    // Only keep the glyphs on screen; there is no designated placement region.
+    return { x: Phaser.Math.Clamp(x, view.left + 38, view.right - 38), y: Phaser.Math.Clamp(y, view.top + 52, view.bottom - 52) };
   }
 
   private paused() { return document.hidden || !document.hasFocus() || !!document.getElementById('restart-dialog')?.hasAttribute('open'); }
