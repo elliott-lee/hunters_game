@@ -6,6 +6,9 @@ export const SHAKE_GAP_MS = 280;
 
 /** Count time only while meaningful direction changes keep arriving. */
 export class CloudShake {
+  readonly duration: number;
+  readonly rewindRate: number;
+  constructor(duration = REVEAL_MS, rewindRate = 1) { this.duration = duration; this.rewindRate = rewindRate; }
   elapsed = 0;
   revealed = false;
   private anchor?: Point;
@@ -32,14 +35,13 @@ export class CloudShake {
     this.sampledAt = now;
     const delta = Number.isFinite(previous) ? Math.max(0, now - previous) : 0;
     if (!overCloud || !this.shaking(now)) {
-      // Unfinished reveals rewind at exactly one second per second, including
-      // time spent outside the cloud or in a hidden tab.
-      this.elapsed = Math.max(0, this.elapsed - delta);
+      // Apply this mode's pause or rewind rate outside the cloud and in hidden tabs.
+      this.elapsed = Math.max(0, this.elapsed - delta * this.rewindRate);
       return false;
     }
     // Never credit a stalled frame, a hidden tab, or time before a shake began.
-    this.elapsed = Math.min(REVEAL_MS, this.elapsed + Math.min(delta, SHAKE_GAP_MS));
-    if (this.elapsed === REVEAL_MS) { this.revealed = true; return true; }
+    this.elapsed = Math.min(this.duration, this.elapsed + Math.min(delta, SHAKE_GAP_MS));
+    if (this.elapsed === this.duration) { this.revealed = true; return true; }
     return false;
   }
 
@@ -55,7 +57,8 @@ export class CloudShake {
 }
 
 /** The letter gains opacity as the cloud loses it. */
-export function revealOpacity(milliseconds: number): number {
+export function revealOpacity(milliseconds: number, duration = REVEAL_MS): number {
+  milliseconds = milliseconds / duration * REVEAL_MS;
   if (milliseconds < 2000) return 0;
   if (milliseconds <= 5000) return .05 + (milliseconds - 2000) / 3000 * .45;
   return Math.min(1, .5 + (milliseconds - 5000) / 5000 * .5);

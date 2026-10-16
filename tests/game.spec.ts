@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 
 type Snapshot = {
-  stage: string; busy: boolean; cracks: number; wrongAttempts: number; reduced: boolean; sound: boolean; locale: string; texts: string[]; endingFade: number;
+  stage: string; difficulty: 'easy' | 'medium' | 'hard' | null; busy: boolean; cracks: number; wrongAttempts: number; reduced: boolean; sound: boolean; locale: string; texts: string[]; endingFade: number;
   letters: { char: string; x: number; y: number; value: number; label: string }[];
   pieces: { id: number; x: number; y: number; width: number; height: number; placed: boolean }[];
   targets: { id: number; x: number; y: number; width: number; height: number; placed?: boolean }[];
@@ -25,9 +25,10 @@ async function setLetters(page: Page, values: number[], modulo: number) {
     for (let j = 0; j < count; j++) await click(page, letter.x, letter.y);
   }
 }
-async function open(page: Page) {
+async function open(page: Page, mode: 'easy' | 'medium' | 'hard' = 'easy') {
   await page.goto('/');
   await expect.poll(async () => (await state(page))?.stage).toBe('glass');
+  await page.locator(`[data-difficulty="${mode}"]`).click();
 }
 
 async function shakeCloud(page: Page, index: number, milliseconds: number) {
@@ -51,23 +52,38 @@ async function gentleDrop(page: Page, index: number, x: number, y: number) {
 
 async function finishBrixton(page: Page, checkMechanics = false) {
   await ready(page, 'brixton');
+  const mode = (await state(page)).difficulty!;
+  const total = { easy: 5000, medium: 7000, hard: 10000 }[mode];
+  const rate = { easy: 0, medium: .5, hard: 1 }[mode];
   const now = await page.evaluate(() => Date.now());
   await page.clock.pauseAt(now + 100);
   expect((await state(page)).clouds).toHaveLength(7);
   expect((await state(page)).clouds.map(c => c.char).sort().join('')).toBe('BINORTX');
+  if (mode === 'hard') {
+    await expect(page.locator('#instruction')).toBeHidden(); await expect(page.locator('#detail')).toBeHidden();
+    expect((await state(page)).texts.filter(text => text.trim())).toEqual([]);
+  } else if (mode === 'medium') {
+    expect((await state(page)).texts.some(text => text.includes('elapsed'))).toBe(true);
+    expect((await state(page)).texts.some(text => text.includes('/ 7'))).toBe(false);
+  } else {
+    await shakeCloud(page, 0, 2400);
+    const progress = (await state(page)).clouds[0].elapsed;
+    const outside = await at(page, 80, 180); await page.mouse.move(outside.x, outside.y); await page.clock.runFor(1500);
+    expect((await state(page)).clouds[0].elapsed).toBe(progress);
+  }
   await page.screenshot({ path: 'test-results/05-clouds.png' });
   if (checkMechanics) {
     // Hovering earns nothing. Only back-and-forth shaking counts.
     const c = (await state(page)).clouds[0], point = await at(page, c.cloudX, c.cloudY);
     await page.mouse.move(point.x, point.y); await page.clock.runFor(2300);
     expect((await state(page)).clouds[0].elapsed).toBe(0);
-    await shakeCloud(page, 0, 1600);
+    await shakeCloud(page, 0, total * .16);
     expect((await state(page)).clouds[0].opacity).toBe(0);
-    await shakeCloud(page, 0, 800);
+    await shakeCloud(page, 0, total * .08);
     expect((await state(page)).clouds[0].opacity).toBeGreaterThan(0);
-    await shakeCloud(page, 0, 2800);
+    await shakeCloud(page, 0, total * .30);
     const half = (await state(page)).clouds[0];
-    expect(half.opacity).toBeGreaterThanOrEqual(.48); expect(half.opacity).toBeLessThan(.54);
+    expect(half.opacity).toBeGreaterThanOrEqual(.48); expect(half.opacity).toBeLessThan(.56);
     expect(half.cloudOpacity + half.opacity).toBeCloseTo(1);
     // Language changes retain the current shake progress.
     const before = half.elapsed;
@@ -78,8 +94,8 @@ async function finishBrixton(page: Page, checkMechanics = false) {
     const rewinding = (await state(page)).clouds[0].elapsed;
     expect(rewinding).toBeGreaterThan(0);
     await page.clock.runFor(1000);
-    expect(rewinding - (await state(page)).clouds[0].elapsed).toBeGreaterThan(960);
-    expect(rewinding - (await state(page)).clouds[0].elapsed).toBeLessThan(1040);
+    expect(rewinding - (await state(page)).clouds[0].elapsed).toBeGreaterThan(rate * 1000 - 40);
+    expect(rewinding - (await state(page)).clouds[0].elapsed).toBeLessThan(rate * 1000 + 40);
     await shakeCloud(page, 0, 1000);
     const leaving = (await state(page)).clouds[0].elapsed;
     const outside = await at(page, 80, 180); await page.mouse.move(outside.x, outside.y); await page.clock.runFor(30);
@@ -87,7 +103,7 @@ async function finishBrixton(page: Page, checkMechanics = false) {
     expect((await state(page)).clouds[0].elapsed).toBeGreaterThan(0);
   }
   for (let i = 0; i < 7; i++) {
-    await shakeCloud(page, i, 10400);
+    await shakeCloud(page, i, total + 400);
     expect((await state(page)).clouds[i].revealed).toBe(true);
     expect((await state(page)).clouds[i].opacity).toBe(1);
   }
@@ -142,15 +158,17 @@ test('complete the game through real clicks and drags, including error and wrapa
     AudioContext.prototype.createOscillator = function () { counter.__toneCount++; return original.call(this); };
   });
   await page.clock.install();
-  await open(page);
+  await open(page, 'medium');
   await expect(page.locator('#interface')).toBeHidden();
   await expect(page.locator('canvas')).toBeVisible();
   await page.screenshot({ path: 'test-results/00-black.png' });
-  // Eleven distributed clicks do not break the surface.
-  for (let i = 0; i < 11; i++) await click(page, 40 + i * 95, 180 + (i % 2) * 280);
+  // Medium counts clicks anywhere, including separate corners.
+  for (let i = 0; i < 6; i++) await click(page, 80 + i * 160, 200 + (i % 2) * 250);
   expect((await state(page)).stage).toBe('glass');
-  for (let i = 0; i < 11; i++) await click(page, 540 + i % 3 * 3, 330 + i % 2 * 3);
+  await click(page, 540, 330);
   await ready(page, 'hunter');
+  await expect(page.locator('#instruction')).toBeHidden();
+  await expect(page.locator('#detail')).toBeVisible();
   await page.screenshot({ path: 'test-results/01-hunter.png' });
   await page.getByRole('button', { name: 'Sound on', exact: true }).click();
   expect((await state(page)).sound).toBe(false);
@@ -160,15 +178,21 @@ test('complete the game through real clicks and drags, including error and wrapa
   expect((await state(page)).busy).toBe(false);
   await setLetters(page, [5, 6, 0, 1, 2, 3], 7);
   await ready(page, 'viola');
+  await expect(page.locator('#instruction')).toBeHidden(); await expect(page.locator('#detail')).toBeHidden();
+  expect((await state(page)).letters.every(letter => letter.label === '')).toBe(true);
   await page.screenshot({ path: 'test-results/02-viola.png' });
   await setLetters(page, [0, 0, 0, 0, 0], 4);
   await ready(page, 'whitney');
+  await expect(page.locator('#instruction')).toBeHidden(); await expect(page.locator('#detail')).toBeHidden();
+  expect((await state(page)).letters.every(letter => letter.label === '')).toBe(true);
   await setLetters(page, Array(7).fill(0), 5);
   expect((await state(page)).wrongAttempts).toBe(1);
-  await expect(page.locator('#instruction')).toContainText('think medium');
+  await expect(page.locator('#instruction')).toBeHidden();
   await page.waitForTimeout(500); // Let the error shake settle before changing size.
   await setLetters(page, Array(7).fill(2), 5);
   await ready(page, 'elliott');
+  await expect(page.locator('#instruction')).toBeHidden(); await expect(page.locator('#detail')).toBeHidden();
+  expect((await state(page)).texts.filter(text => text.trim())).toEqual([]);
   await page.screenshot({ path: 'test-results/04-elliott.png' });
   // A released stroke stays where it is even when it is not part of a letter yet.
   let s = await state(page);
@@ -201,7 +225,7 @@ test('touch input, resize, settings, keyboard letters, and restart work', async 
   const context = await browser.newContext({ viewport: { width: 800, height: 600 }, hasTouch: true });
   const page = await context.newPage();
   await open(page);
-  for (let i = 0; i < 11; i++) { const p = await at(page, 480, 300); await page.touchscreen.tap(p.x, p.y); }
+  for (let i = 0; i < 3; i++) { const p = await at(page, 480, 300); await page.touchscreen.tap(p.x, p.y); }
   await ready(page, 'hunter');
   await page.locator('#effects').click();
   expect((await state(page)).reduced).toBe(true);
@@ -232,7 +256,7 @@ test('touch dragging reconstructs the word and reduced effects reaches a soft en
   page.on('pageerror', error => errors.push(error.message));
   await open(page);
   expect((await state(page)).reduced).toBe(true);
-  for (let i = 0; i < 11; i++) { const p = await at(page, 400, 300); await page.touchscreen.tap(p.x, p.y); }
+  for (let i = 0; i < 3; i++) { const p = await at(page, 400, 300); await page.touchscreen.tap(p.x, p.y); }
   await ready(page, 'hunter');
   await expect(page.locator('#instruction')).toHaveText('Mets les couleurs de l’arc-en-ciel dans l’ordre.');
   await setLetters(page, [0, 1, 2, 3, 4, 5], 7);
@@ -281,7 +305,7 @@ test('French is the default, switching preserves play, and the choice is remembe
   await expect(page.locator('#instruction')).toHaveText('Everything starts with a crack.');
   await expect(page.locator('#announcement')).toContainText('1 crack.');
   expect((await state(page)).cracks).toBe(1);
-  for (let i = 0; i < 10; i++) await click(page, 540, 330);
+  for (let i = 0; i < 2; i++) await click(page, 540, 330);
   await ready(page, 'hunter');
   await click(page, 250, 330);
   const values = (await state(page)).letters.map(l => l.value);
@@ -316,4 +340,87 @@ test('language choice still works when browser storage is unavailable', async ({
   await page.locator('#language').click();
   await expect(page.locator('html')).toHaveAttribute('lang', 'en');
   expect((await state(page)).cracks).toBe(1);
+});
+
+test('difficulty menu dodges the cursor and Hard glass requires ten nearby clicks', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('hunter-language', 'en'));
+  await page.goto('/');
+  await expect(page.getByRole('heading', { name: 'Choose your difficulty.' })).toBeVisible();
+  await expect(page.locator('#impossible')).toBeDisabled();
+  for (let i = 0; i < 8; i++) {
+    const before = (await page.locator('#impossible').boundingBox())!;
+    await page.mouse.move(before.x + before.width / 2, before.y + before.height / 2);
+    const after = (await page.locator('#impossible').boundingBox())!;
+    expect(Math.hypot(after.x - before.x, after.y - before.y)).toBeGreaterThan(100);
+    expect(after.x).toBeGreaterThanOrEqual(0); expect(after.y).toBeGreaterThanOrEqual(0);
+    expect(after.x + after.width).toBeLessThanOrEqual(1366); expect(after.y + after.height).toBeLessThanOrEqual(768);
+  }
+  expect((await state(page)).difficulty).toBeNull(); expect((await state(page)).cracks).toBe(0);
+  await page.locator('[data-difficulty="hard"]').click();
+  for (let i = 0; i < 10; i++) await click(page, 70 + i * 100, i % 2 ? 200 : 500);
+  expect((await state(page)).stage).toBe('glass');
+  for (let i = 0; i < 9; i++) await click(page, 540, 330);
+  expect((await state(page)).stage).toBe('glass'); expect((await state(page)).busy).toBe(false);
+  await expect(page.locator('#instruction')).toBeHidden(); await expect(page.locator('#detail')).toBeHidden(); await expect(page.locator('#chapter')).toBeHidden();
+  await click(page, 540, 330); await ready(page, 'hunter');
+  await page.locator('#restart').click(); await page.locator('#confirm-restart').click(); await ready(page, 'glass');
+  await expect(page.locator('#difficulty-menu')).toBeVisible(); expect((await state(page)).difficulty).toBeNull();
+});
+
+test('Hard random colours, moving VIOLA, tighter reconstruction, and hidden cloud hints remain solvable', async ({ page }) => {
+  test.setTimeout(180000);
+  const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
+  await page.addInitScript(() => localStorage.setItem('hunter-language', 'en'));
+  await page.clock.install(); await open(page, 'hard');
+  for (let i = 0; i < 10; i++) await click(page, 540, 330);
+  await ready(page, 'hunter');
+  const jumps: number[] = [];
+  for (let i = 0; i < 12; i++) {
+    const before = (await state(page)).letters[0]; await click(page, before.x, before.y);
+    const after = (await state(page)).letters[0]; jumps.push((after.value - before.value + 7) % 7);
+  }
+  expect(jumps.every(jump => jump > 0)).toBe(true); expect(jumps.some(jump => jump !== 1)).toBe(true);
+  expect((await state(page)).letters.every(letter => letter.label === '')).toBe(true);
+  for (let i = 0; i < 6; i++) {
+    for (let attempt = 0; attempt < 100; attempt++) {
+      const current = await state(page); if (current.busy || current.letters[i].value === i) break;
+      await click(page, current.letters[i].x, current.letters[i].y);
+    }
+  }
+  await ready(page, 'viola');
+  const initial = (await state(page)).letters.map(letter => letter.value);
+  expect(initial.every(value => [1, 2, 3].includes(value))).toBe(true);
+  await expect.poll(async () => (await state(page)).letters.map(letter => letter.value).join() !== initial.join()).toBe(true);
+  for (let attempt = 0; attempt < 12 && (await state(page)).letters[0].value !== 0; attempt++) await click(page, 308, 330);
+  expect((await state(page)).letters[0].value).toBe(0);
+  await page.waitForTimeout(2300); expect((await state(page)).letters[0].value).toBe(0);
+  for (let i = 1; i < 5; i++) {
+    for (let attempt = 0; attempt < 12; attempt++) {
+      const current = await state(page); if (current.busy || current.letters[i].value === 0) break;
+      await click(page, current.letters[i].x, current.letters[i].y);
+    }
+  }
+  await ready(page, 'whitney');
+  await setLetters(page, Array(7).fill(0), 5);
+  await expect(page.locator('#instruction')).toBeHidden(); await expect(page.locator('#detail')).toBeHidden();
+  await page.waitForTimeout(500); await setLetters(page, Array(7).fill(2), 5);
+  await ready(page, 'elliott');
+  expect((await state(page)).texts.filter(text => text.trim())).toEqual([]);
+  let current = await state(page);
+  expect(current.pieces.some((piece, i) => Math.abs(piece.x - (100 + i * 80)) > 25)).toBe(true);
+  expect(new Set(current.pieces.map(piece => Math.round(piece.y))).size).toBeGreaterThan(2);
+  const first = current.pieces[0], target = current.targets[0];
+  let from = await at(page, first.x, first.y), to = await at(page, target.x + 30, target.y + 25);
+  await page.mouse.move(from.x, from.y); await page.mouse.down(); await page.mouse.move(to.x, to.y, { steps: 10 }); await page.mouse.up();
+  expect((await state(page)).pieces[0].placed).toBe(false);
+  for (let i = 0; i < 12; i++) {
+    current = await state(page); const piece = current.pieces[i], goal = current.targets[i];
+    from = await at(page, piece.x, piece.y); to = await at(page, goal.x + 4, goal.y + 4);
+    await page.mouse.move(from.x, from.y); await page.mouse.down(); await page.mouse.move(to.x, to.y, { steps: 10 }); await page.mouse.up(); await page.waitForTimeout(150);
+  }
+  expect((await state(page)).targets.filter(target => target.placed)).toHaveLength(12);
+  await finishBrixton(page);
+  await ready(page, 'ending'); expect((await state(page)).texts).toContain('GET BACK TO WORK,\nKIDS!');
+  await page.getByRole('button', { name: 'Play again' }).click(); await ready(page, 'glass');
+  await expect(page.locator('#difficulty-menu')).toBeVisible(); expect(errors).toEqual([]);
 });

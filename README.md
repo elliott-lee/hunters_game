@@ -4,7 +4,7 @@ A short browser puzzle game built with TypeScript, Vite, and Phaser 3. Runs on c
 
 ## Languages
 
-The game defaults to Québec French (`fr-CA`), including on English-language devices. After the first click, choose **English** in the header to switch; **Français** switches back. The opening remains completely black. Changing languages preserves current puzzle progress and the chosen language is remembered locally, including on the credits page. If browser storage is blocked, switching still works for the current page.
+The game defaults to Québec French (`fr-CA`), including on English-language devices. Choose **English** on the difficulty screen or in the game header to switch; **Français** switches back. The opening uses a black background with Easy, Medium, Hard, and Impossible choices. Changing languages preserves current puzzle progress and the chosen language is remembered locally, including on the credits page. If browser storage is blocked, switching still works for the current page.
 
 Instructions, controls, colour and size labels, keyboard/screen-reader text, credits, and the ending are translated. Names stay HUNTER, VIOLA, WHITNEY, ELLIOTT, and BRIXTON. French sizes are TP, P, M, G, TG; English sizes are XS, SM, MD, LG, XL. The ending reads “AU TRAVAIL, LES JEUNES !” in French and “GET BACK TO WORK, KIDS!” in English, with the same effects.
 
@@ -34,13 +34,20 @@ Browser tests use `/usr/bin/chromium` by default. Set `CHROMIUM_PATH` to your Ch
 
 ## Play
 
-1. **Glass:** the first screen is completely black. Click 11 times within a radius of 110 logical pixels to shatter it. Clicking elsewhere makes separate cracks. Enter or Space cracks the centre with a keyboard.
-2. **HUNTER:** click letters to cycle red, orange, yellow, green, blue, indigo, violet. Six consecutive colours succeed, starting anywhere and wrapping from violet to red. Colour names are printed below the letters.
-3. **VIOLA:** click to rotate 90° clockwise. All five must be upright.
-4. **WHITNEY:** click through XS, SM, MD, LG, XL. All MD melts the word. Matching at any other size shakes the word and sounds an error.
-5. **ELLIOTT:** E, L, L, T, T break into twelve horizontal and vertical strokes. I and O remain. Drag strokes back into the name; there are no guides. Release elsewhere and the piece stays there. Generous hidden acceptance regions and snapping accommodate gaps and overlapping strokes. Similar strokes are interchangeable. A placed stroke can be dragged again before the puzzle is completed. Once rebuilt, all seven letters crumple into paper wads and fly away in seven directions.
-6. **BRIXTON:** seven clouds float in over shuffled letters. Shake the cursor back and forth over one cloud without clicking. Rain starts while shaking; the letter first appears at 2 seconds, is 50% visible at 5 seconds, and is fully visible at 10 seconds as its cloud disappears. After a brief 280 ms input tolerance, stopping reverses an unfinished reveal at one second per second. Leaving a cloud starts the same rewind immediately; completed reveals stay. Stationary hovering, tiny jitter, and a straight sweep do not count. Once all letters appear, drag them into a horizontal row spelling BRIXTON. Releasing while moving gives the letter momentum through Matter physics; stopping the cursor for at least 100 ms before release leaves it still. Letters stay within the playable area. A correct, spaced row must stay settled for 700 ms to complete.
-7. **Ending:** a slow fade to white, a short pause, then a sudden visual-only zoom with the message in the selected language. Replay resets all puzzles.
+Choose Easy, Medium, or Hard before the first crack. Impossible dodges whenever the cursor gets within 80 screen pixels; it is disabled so pointer, touch, and keyboard input cannot select it. Restart and replay return to the difficulty screen. Language changes preserve the chosen mode and puzzle state.
+
+| Level | Easy | Medium | Hard |
+| --- | --- | --- | --- |
+| Glass | 3 clicks anywhere | 7 clicks anywhere | 10 clicks within the existing 110-pixel radius; no instructions |
+| HUNTER | Existing colour cycle and hints | Headline removed; colour cycle and detail remain | Random initial colours and a random different colour on every click; hints and colour labels hidden |
+| VIOLA | Existing quarter-turn puzzle | Headline, detail, and TURN/UPRIGHT labels hidden | Unfinished letters turn randomly among 90°, 180°, and 270°; upright letters stay still; no hints |
+| WHITNEY | Existing size puzzle and labels | Headline, detail, and size labels hidden | No hints or size labels |
+| ELLIOTT | Existing reconstruction and generous snapping | No instructions | Irregular random floor positions, no instructions, and tighter snapping (24×20 pixels instead of 43×35) |
+| BRIXTON | 5 seconds per cloud; unfinished progress pauses | 7 seconds per cloud; 1 second unwinds every 2 seconds; elapsed time only | Original 10-second reveal and 1:1 rewind; all text hints, timers, and row guides hidden |
+
+HUNTER still accepts any consecutive six-colour rainbow, including wraparound. VIOLA succeeds when all five letters are upright. WHITNEY succeeds only with all seven letters medium; matching at other sizes gives an error. ELLIOTT has twelve interchangeable strokes plus fixed I/O; once rebuilt, all seven letters crumple into paper wads and scatter.
+
+BRIXTON requires meaningful back-and-forth movement over a cloud without clicking, with 280 ms between direction changes allowed for trackpads. Hovering, tiny jitter, and straight sweeps do not count. Reveal opacity scales with the mode's duration: a first glimpse at 20%, half-visible at 50%, fully visible at 100%. Fully revealed letters stay revealed. Then drag them into a separated horizontal row spelling BRIXTON. Matter physics uses the recent cursor velocity when releasing; stopping for at least 100 ms before release keeps a letter still. The row must settle for 700 ms. A white fade leads to the visual-only localized GET BACK TO WORK, KIDS! ending.
 
 Sound starts with the first interaction and can be muted. **Reduce effects** suppresses shaking, decreases particles and transition motion, removes cloud bobbing, and replaces the final startle with a slow text fade with no jump-scare audio in either mode. It respects the system's initial reduced-motion preference and remembers the player's setting locally. Progress is not saved; reloading starts a fresh game. Hidden tabs, lost focus, and an open restart dialog cannot earn reveal progress.
 
@@ -59,6 +66,6 @@ Render can host it as a Static Site with the same build command and publish dire
 - d3-delaunay creates the glass fragments; Matter animates their fall.
 - OpenMoji provides the locally bundled unicorn and rainbow SVGs, under CC BY-SA 4.0. See `credits.html` and the bundled license. No artwork changes were made.
 - i18next handles the two bundled language catalogs. `vite.config.ts` builds both the game and the localized credits page, keeping Phaser out of the credits-page bundle.
-- `src/rules.ts` holds the original puzzle checks and placement tolerance; `src/brixton-rules.ts` checks continuous shaking, reveal timing, cursor velocity, and row completion; `src/brixton.ts` runs the cloud level; `src/main.ts` runs stages and transitions; `src/audio.ts` produces simple effects with Web Audio.
+- `src/difficulty.ts` declares mode rules and hint visibility; `src/difficulty-menu.ts` handles the opening choices and evasive Impossible word; `src/rules.ts` holds the original puzzle checks and placement tolerance; `src/brixton-rules.ts` checks continuous shaking, reveal timing, cursor velocity, and row completion; `src/brixton.ts` runs the cloud level; `src/main.ts` runs stages and transitions; `src/audio.ts` produces simple effects with Web Audio.
 
 Chromium automation verifies the full game, but an actual school-managed Chromebook is still useful for checking device performance, audio policies, and site-filter restrictions.

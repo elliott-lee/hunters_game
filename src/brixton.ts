@@ -4,6 +4,7 @@ import { Audio } from './audio';
 import { t, type TranslationKey, type TranslationParams } from './i18n';
 import { BRIXTON, CloudShake, brixtonSolved, releaseVelocity, revealOpacity, type PointerSample } from './brixton-rules';
 import type { Point } from './rules';
+import { DIFFICULTY, type Difficulty } from './difficulty';
 
 type Cloud = {
   char: string; art: Phaser.GameObjects.Container; letter: Phaser.GameObjects.Container;
@@ -30,7 +31,7 @@ export class BrixtonLevel {
   private keyboardCloud?: number;
   private wasPaused = false;
 
-  constructor(private scene: Phaser.Scene, private audio: Audio, private hooks: Hooks) {
+  constructor(private scene: Phaser.Scene, private audio: Audio, private hooks: Hooks, private difficulty: Difficulty) {
     this.rain = scene.add.graphics().setDepth(7);
     const shuffled = Phaser.Utils.Array.Shuffle([...BRIXTON]);
     if (shuffled.join('') === BRIXTON) [shuffled[0], shuffled[1]] = [shuffled[1], shuffled[0]];
@@ -49,15 +50,18 @@ export class BrixtonLevel {
       shape.fillCircle(-40, -17, 33); shape.fillCircle(0, -32, 40); shape.fillCircle(40, -12, 31);
       shape.lineBetween(-53, 38, 53, 38);
       art.add(shape);
-      const label = scene.add.text(x, y + 66, '', { fontFamily: 'monospace', fontSize: '11px', color: '#526a80' }).setOrigin(.5).setDepth(6);
-      const cloud: Cloud = { char, art, letter, body, label, shake: new CloudShake() };
+      const label = scene.add.text(x, y + 66, '', { fontFamily: 'monospace', fontSize: '11px', color: '#526a80' }).setOrigin(.5).setDepth(6).setVisible(difficulty !== 'hard');
+      const settings = DIFFICULTY[difficulty];
+      const cloud: Cloud = { char, art, letter, body, label, shake: new CloudShake(settings.cloudMs, settings.rewindRate) };
       this.clouds.push(cloud);
       scene.tweens.add({ targets: art, x, duration: hooks.reduced() ? 300 : 900, delay: hooks.reduced() ? 0 : i * 95, ease: 'Sine.Out' });
     });
-    const guide = scene.add.graphics().lineStyle(1, 0x718b9f, .4);
-    for (let i = 0; i < 7; i++) guide.lineBetween(204 + i * 112 - 34, 604, 204 + i * 112 + 34, 604);
-    scene.add.text(540, 164, t('cloudTiming'), { fontFamily: 'monospace', fontSize: '12px', color: '#526a80' })
-      .setOrigin(.5).setData('i18nKey', 'cloudTiming');
+    if (difficulty !== 'hard') {
+      const guide = scene.add.graphics().lineStyle(1, 0x718b9f, .4);
+      for (let i = 0; i < 7; i++) guide.lineBetween(204 + i * 112 - 34, 604, 204 + i * 112 + 34, 604);
+    }
+    if (difficulty === 'easy') scene.add.text(540, 164, t('cloudGoalEasy'), { fontFamily: 'monospace', fontSize: '12px', color: '#526a80' })
+      .setOrigin(.5).setData('i18nKey', 'cloudGoalEasy');
     scene.time.delayedCall(hooks.reduced() ? 350 : 1600, () => {
       this.entering = false;
       if (!hooks.reduced()) for (const cloud of this.clouds) scene.tweens.add({ targets: cloud.art, y: cloud.art.y - 6, duration: 1700, yoyo: true, repeat: -1 });
@@ -99,9 +103,9 @@ export class BrixtonLevel {
       if (!c.shake.revealed) {
         const over = this.active === c && !!this.pointer && this.contains(c, this.pointer);
         const revealed = c.shake.tick(now, over);
-        const opacity = revealOpacity(c.shake.elapsed);
+        const opacity = revealOpacity(c.shake.elapsed, c.shake.duration);
         c.letter.setAlpha(opacity); c.art.setAlpha(1 - opacity);
-        c.label.setText(t('cloudSeconds', { seconds: (c.shake.elapsed / 1000).toFixed(1) }));
+        c.label.setText(this.difficulty === 'hard' ? '' : t(this.difficulty === 'medium' ? 'cloudElapsed' : 'cloudProgress', { seconds: (c.shake.elapsed / 1000).toFixed(1), total: c.shake.duration / 1000 }));
         if (over && c.shake.shaking(now)) this.drawRain(c, now);
         if (revealed) {
           c.art.setVisible(false); c.label.setVisible(false); this.audio.click(this.clouds.filter(c => c.shake.revealed).length);
@@ -210,13 +214,13 @@ export class BrixtonLevel {
     controls.replaceChildren();
     this.clouds.forEach((c, i) => {
       const button = document.createElement('button'); button.dataset.index = String(i);
-      button.textContent = this.arranging ? t('brixtonLetterControl', { letter: c.char }) : t('cloudControl', { index: i + 1 });
+      button.textContent = this.arranging ? t('brixtonLetterControl', { letter: c.char }) : t(this.difficulty === 'hard' ? 'cloudControlSimple' : 'cloudControl', { index: i + 1 });
       button.disabled = !this.arranging && c.shake.revealed;
       button.addEventListener('click', () => {
         this.leave();
         if (this.arranging) { this.selected = i; this.scene.matter.body.setVelocity(c.body, { x: 0, y: 0 }); }
         else { this.keyboardCloud = i; this.active = c; this.pointer = { x: c.art.x, y: c.art.y }; }
-        this.hooks.announce(this.arranging ? 'brixtonLetterSelected' : 'cloudSelected');
+        this.hooks.announce(this.arranging ? 'brixtonLetterSelected' : this.difficulty === 'easy' ? 'cloudSelectedEasy' : 'cloudSelectedMedium');
         button.blur();
       });
       controls.append(button);

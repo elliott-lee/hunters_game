@@ -49,8 +49,9 @@ export function localizeDocument() {
       else element.textContent = value;
     });
   }
-  const button = document.getElementById('language');
-  if (button) {
+  for (const id of ['language', 'difficulty-language']) {
+    const button = document.getElementById(id);
+    if (!button) continue;
     button.textContent = locale() === 'fr-CA' ? 'English' : 'Français';
     button.lang = locale() === 'fr-CA' ? 'en' : 'fr-CA';
     button.setAttribute('aria-label', t('switchLanguage'));
@@ -61,7 +62,7 @@ export function localizeDocument() {
 export function bindLanguageControl() {
   localizeDocument();
   onLocaleChange(localizeDocument);
-  document.getElementById('language')?.addEventListener('click', () => void changeLocale(locale() === 'fr-CA' ? 'en' : 'fr-CA'));
+  for (const id of ['language', 'difficulty-language']) document.getElementById(id)?.addEventListener('click', () => void changeLocale(locale() === 'fr-CA' ? 'en' : 'fr-CA'));
   window.addEventListener('storage', event => {
     if (event.key === STORAGE_KEY || event.key === null) void i18n.changeLanguage(preferredLocale(event.newValue));
   });

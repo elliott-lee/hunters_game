@@ -7,6 +7,14 @@ button:focus-visible { outline: 2px solid #f6d979; outline-offset: 5px; }
 #app { width: 100vw; height: 100dvh; min-height: 280px; position: relative; overflow: hidden; background: #000; }
 #game { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
 #game canvas { display: block; touch-action: none; }
+#difficulty-menu { position: absolute; inset: 0; z-index: 20; background: #000; color: #fff; }
+.difficulty-options { position: absolute; top: 42%; left: 50%; transform: translate(-50%, -50%); width: min(90vw, 540px); text-align: center; }
+#difficulty-heading { font-size: clamp(18px, 3vw, 26px); font-weight: 500; margin: 0 0 30px; }
+.difficulty-buttons { display: flex; justify-content: center; gap: 15px; flex-wrap: wrap; }
+#difficulty-menu button { border: 1px solid #ffffff70; border-radius: 4px; padding: 14px 22px; background: #000; color: #fff; font-size: 15px; }
+#difficulty-menu button:hover { background: #ffffff18; }
+#difficulty-menu #difficulty-language { position: absolute; top: 24px; right: 4vw; font-size: 11px; padding: 10px 14px; }
+#difficulty-menu #impossible { position: absolute; opacity: 1; border-color: transparent; color: #d7b1ef; white-space: nowrap; user-select: none; }
 #interface { position: absolute; inset: 0; pointer-events: none; color: #eee3ff; transition: color .7s; }
 header { position: absolute; left: 4vw; right: 4vw; top: max(24px, env(safe-area-inset-top)); display: flex; align-items: center; gap: 24px; }
 .brand { font-weight: 900; font-size: 19px; letter-spacing: -2px; white-space: nowrap; }

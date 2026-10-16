@@ -11,6 +11,18 @@
   <body data-page="game">
     <main id="app" aria-label="Le jeu de Hunter" data-i18n-label="siteTitle">
       <div id="game" aria-label="Casse la vitre noire en cliquant ou en appuyant sur Entrée." data-i18n-label="canvasLabel"></div>
+      <section id="difficulty-menu" aria-labelledby="difficulty-heading">
+        <button id="difficulty-language" lang="en">English</button>
+        <div class="difficulty-options">
+          <h1 id="difficulty-heading" data-i18n="chooseDifficulty">Choisis la difficulté.</h1>
+          <div class="difficulty-buttons">
+            <button data-difficulty="easy" data-i18n="easy">Facile</button>
+            <button data-difficulty="medium" data-i18n="medium">Moyen</button>
+            <button data-difficulty="hard" data-i18n="hard">Difficile</button>
+          </div>
+        </div>
+        <button id="impossible" disabled aria-disabled="true" data-i18n="impossible">Impossible</button>
+      </section>
       <div id="interface" hidden>
         <header>
           <span class="brand">H<span class="brand-dot">.</span>G</span>

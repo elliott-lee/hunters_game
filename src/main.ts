@@ -2,6 +2,8 @@ import Phaser from 'phaser';
 import { Delaunay } from 'd3-delaunay';
 import { Audio } from './audio';
 import { BrixtonLevel } from './brixton';
+import { DifficultyMenu } from './difficulty-menu';
+import { DIFFICULTY, hints, randomColour, type Difficulty } from './difficulty';
 import { glyph, paintGlyph } from './glyphs';
 import { RAINBOW, COLOUR_NAMES, SIZES, SIZE_NAMES, rainbowSolved, rotationsSolved, sizeResult, nearbyCracks, matchingStroke, type Point, type Stroke } from './rules';
 import { t, locale, bindLanguageControl, onLocaleChange, type TranslationKey, type TranslationParams, type Message } from './i18n';
@@ -35,6 +37,8 @@ class Puzzle extends Phaser.Scene {
   targets: Stroke[] = [];
   pieces: Piece[] = [];
   wrongAttempts = 0;
+  difficulty?: Difficulty;
+  private get mode(): Difficulty { return this.difficulty ?? 'easy'; }
   private backdrop!: Phaser.GameObjects.Rectangle;
   private cracksArt!: Phaser.GameObjects.Graphics;
   private shardArt!: Phaser.GameObjects.Graphics;
@@ -54,6 +58,7 @@ class Puzzle extends Phaser.Scene {
     this.load.svg('rainbow', '/assets/rainbow.svg', { width: 128, height: 128 });
   }
   create() {
+    this.difficulty = undefined; difficultyMenu.show();
     this.stage = 'glass'; this.busy = false; this.letters = []; this.pieces = []; this.targets = []; this.cracks = []; this.shards = []; this.wrongAttempts = 0;
     this.selectedPiece = undefined; this.dragPiece = undefined;
     this.fixedElliott = []; this.brixton = undefined;
@@ -120,14 +125,19 @@ class Puzzle extends Phaser.Scene {
     const zoom = Math.min(this.scale.width / 1080, this.scale.height / 720);
     this.cameras.main.setZoom(zoom).centerOn(540, 360);
   }
+  chooseDifficulty(mode: Difficulty) {
+    if (this.difficulty || this.stage !== 'glass') return;
+    this.difficulty = mode; difficultyMenu.hide(); this.updateUI();
+    document.querySelector<HTMLButtonElement>('[data-difficulty]:focus')?.blur();
+  }
   private snapshot() {
-    return { stage: this.stage, busy: this.busy, cracks: this.cracks.length, wrongAttempts: this.wrongAttempts,
+    return { stage: this.stage, difficulty: this.difficulty ?? null, busy: this.busy, cracks: this.cracks.length, wrongAttempts: this.wrongAttempts,
       letters: this.letters.map(l => ({ char: l.char, x: l.x, y: l.y, value: l.value, label: l.label.text })),
       pieces: this.pieces.map(p => ({ id: p.id, x: p.x, y: p.y, width: p.width, height: p.height, placed: !!p.placed })),
       targets: this.targets.map(t => ({ ...t })), reduced, sound: audio.enabled, locale: locale(),
       clouds: this.brixton?.snapshot() ?? [],
       endingFade: (this.children.list.find(o => o.getData('endingCurtain')) as Phaser.GameObjects.Rectangle | undefined)?.alpha ?? 0,
-      texts: this.children.list.filter(o => o instanceof Phaser.GameObjects.Text).map(o => (o as Phaser.GameObjects.Text).text),
+      texts: this.children.list.filter(o => o instanceof Phaser.GameObjects.Text && o.visible && o.alpha > 0).map(o => (o as Phaser.GameObjects.Text).text),
       camera: { zoom: this.cameras.main.zoom, width: this.scale.width, height: this.scale.height } };
   }
   update(_time: number, delta: number) {
@@ -143,9 +153,14 @@ class Puzzle extends Phaser.Scene {
   private updateUI(key?: TranslationKey, params?: TranslationParams) {
     this.message = key ? { key, params } : undefined;
     const [chapter, instruction, detail] = META[this.stage];
+    const policy = hints(this.mode, this.stage);
     $('chapter').textContent = t(chapter);
     $('instruction').textContent = t(key ?? instruction, params);
     $('detail').textContent = t(this.stage === 'brixton' && this.brixton?.arranging ? 'detailBrixtonArrange' : detail);
+    if (this.stage === 'glass' && this.mode !== 'hard') $('detail').textContent = t('detailGlassMode', { count: DIFFICULTY[this.mode].glassClicks });
+    if (this.stage === 'brixton' && !this.brixton?.arranging) $('detail').textContent = t(this.mode === 'easy' ? 'detailBrixtonEasy' : 'detailBrixtonMedium');
+    $('chapter').hidden = !policy.chapter; $('instruction').hidden = !policy.instruction; $('detail').hidden = !policy.detail;
+    document.querySelector('canvas')?.setAttribute('aria-label', t(this.mode === 'hard' ? 'gameArea' : 'canvasLabel'));
     $('interface').classList.toggle('light', ['elliott', 'brixton', 'ending'].includes(this.stage));
     const current = this.stage === 'ending' ? STAGES.length : STAGES.indexOf(this.stage);
     const names: TranslationKey[] = ['nameGlass', 'nameHunter', 'nameViola', 'nameWhitney', 'nameElliott', 'nameBrixton'];
@@ -161,10 +176,11 @@ class Puzzle extends Phaser.Scene {
     $('effects').textContent = t(reduced ? 'effectsReduced' : 'effectsNormal');
   }
   private announce(key: TranslationKey, params?: TranslationParams) {
+    if (this.stage !== 'ending' && !hints(this.mode, this.stage).detail) { this.announcement = undefined; $('announcement').textContent = ''; return; }
     this.announcement = { key, params }; $('announcement').textContent = t(key, params);
   }
   private localizedText(x: number, y: number, key: TranslationKey, style: Phaser.Types.GameObjects.Text.TextStyle) {
-    return this.add.text(x, y, t(key), style).setData('i18nKey', key);
+    return this.add.text(x, y, t(key), style).setData('i18nKey', key).setVisible(key === 'endingMessage' || hints(this.mode, this.stage).canvas);
   }
   private refreshTranslations() {
     this.updateUI(this.message?.key, this.message?.params);
@@ -180,11 +196,11 @@ class Puzzle extends Phaser.Scene {
     }
   }
   crack(at: Point) {
-    if (this.stage !== 'glass' || this.busy) return;
+    if (this.stage !== 'glass' || this.busy || !this.difficulty) return;
     $('interface').hidden = false;
     audio.unlock();
     this.cracks.push(at); this.lastPointer = at;
-    const strength = nearbyCracks(this.cracks, at);
+    const strength = this.mode === 'hard' ? nearbyCracks(this.cracks, at) : this.cracks.length;
     const g = this.cracksArt;
     const seed = new Phaser.Math.RandomDataGenerator([String(this.cracks.length), `${at.x},${at.y}`]);
     for (let arm = 0; arm < 6; arm++) {
@@ -207,8 +223,8 @@ class Puzzle extends Phaser.Scene {
     }
     this.ring(at.x, at.y, 0xece2ff, 24, .15);
     audio.crack();
-    this.announce('cracks', { count: strength });
-    if (strength >= 11) this.breakGlass();
+    this.announce('glassClicks', { count: strength });
+    if (strength >= DIFFICULTY[this.mode].glassClicks) this.breakGlass();
   }
   private breakGlass() {
     this.busy = true; this.updateUI('otherSide');
@@ -260,6 +276,11 @@ class Puzzle extends Phaser.Scene {
   private word(text: string, stage: Stage) {
     this.letters = [];
     const initial = stage === 'hunter' ? [5, 2, 0, 6, 1, 4] : stage === 'viola' ? [1, 3, 2, 1, 3] : [0, 4, 1, 3, 0, 4, 1];
+    if (this.mode === 'hard' && stage === 'hunter') {
+      for (let i = 0; i < initial.length; i++) initial[i] = Phaser.Math.Between(0, 6);
+      if (rainbowSolved(initial)) initial[5] = (initial[5] + 1) % 7;
+    }
+    if (this.mode === 'hard' && stage === 'viola') for (let i = 0; i < initial.length; i++) initial[i] = Phaser.Math.Between(1, 3);
     const spacing = stage === 'whitney' ? 111 : 116;
     for (let i = 0; i < text.length; i++) {
       const x = 540 + (i - (text.length - 1) / 2) * spacing, y = 330;
@@ -269,6 +290,11 @@ class Puzzle extends Phaser.Scene {
       const letter = { char: text[i], stage, x, y, value: initial[i], art, hit, label };
       this.letters.push(letter);
       this.renderLetter(letter, stage, false);
+      if (this.mode === 'hard' && stage === 'viola') this.time.addEvent({ delay: Phaser.Math.Between(1100, 2100), loop: true, callback: () => {
+        if (this.stage !== 'viola' || this.busy || letter.value === 0) return;
+        letter.value = Phaser.Utils.Array.GetRandom([1, 2, 3].filter(value => value !== letter.value));
+        this.renderLetter(letter, stage); this.keyboardLetters();
+      } });
       hit.on('pointerdown', () => this.clickLetter(i));
       hit.on('pointerover', () => { if (!this.busy) label.setAlpha(1); });
       hit.on('pointerout', () => label.setAlpha(.5));
@@ -286,7 +312,7 @@ class Puzzle extends Phaser.Scene {
       const target = l.value * 90;
       if (animate && !reduced) {
         const from = l.art.angle;
-        this.tweens.add({ targets: l.art, angle: from + 90, duration: 190, ease: 'Cubic.Out', onComplete: () => l.art.setAngle(target) });
+        this.tweens.add({ targets: l.art, angle: this.mode === 'hard' ? from + Phaser.Math.Angle.ShortestBetween(from, target) : from + 90, duration: 190, ease: 'Cubic.Out', onComplete: () => l.art.setAngle(target) });
       } else l.art.setAngle(target);
     } else if (stage === 'whitney') {
       paintGlyph(l.art, l.char, 0xffdfa6);
@@ -295,6 +321,8 @@ class Puzzle extends Phaser.Scene {
     }
   }
   private labelLetter(l: Letter, stage: Stage) {
+    if (!hints(this.mode, stage).labels) { l.label.setText('').setVisible(false); return; }
+    l.label.setVisible(true);
     if (stage === 'hunter') l.label.setText(t(COLOUR_NAMES[l.value]).toLocaleUpperCase(locale()));
     else if (stage === 'viola') l.label.setText(t(l.value === 0 ? 'upright' : 'turn'));
     else if (stage === 'whitney') l.label.setText(t(SIZE_NAMES[l.value]));
@@ -302,7 +330,7 @@ class Puzzle extends Phaser.Scene {
   clickLetter(index: number) {
     if (this.busy || !['hunter', 'viola', 'whitney'].includes(this.stage)) return;
     const l = this.letters[index]; if (!l) return;
-    l.value = (l.value + 1) % (this.stage === 'hunter' ? 7 : this.stage === 'viola' ? 4 : 5);
+    l.value = this.mode === 'hard' && this.stage === 'hunter' ? randomColour(l.value) : (l.value + 1) % (this.stage === 'hunter' ? 7 : this.stage === 'viola' ? 4 : 5);
     this.renderLetter(l); audio.click(l.value);
     this.keyboardLetters();
     const values = this.letters.map(l => l.value);
@@ -326,7 +354,7 @@ class Puzzle extends Phaser.Scene {
     this.letters.forEach((l, i) => {
       const button = document.createElement('button');
       const state = this.stage === 'hunter' ? t(COLOUR_NAMES[l.value]) : this.stage === 'viola' ? (l.value === 0 ? t('upright') : t('degrees', { angle: l.value * 90 })) : t(SIZE_NAMES[l.value]);
-      button.textContent = t('letterControl', { letter: l.char, index: i + 1, state }); button.dataset.index = String(i);
+      button.textContent = t(hints(this.mode, this.stage).labels ? 'letterControl' : 'letterControlSimple', { letter: l.char, index: i + 1, state }); button.dataset.index = String(i);
       button.addEventListener('click', () => this.clickLetter(i)); controls.append(button);
     });
     if (focused !== undefined) controls.querySelector<HTMLButtonElement>(`[data-index="${focused}"]`)?.focus();
@@ -403,7 +431,7 @@ class Puzzle extends Phaser.Scene {
         arrange: () => { this.updateUI('arrangeBrixton'); this.announce('detailBrixtonArrange'); },
         complete: () => this.finish(),
         announce: (key, params) => this.announce(key, params),
-      });
+      }, this.mode);
     }
     else {
       this.word(stage.toUpperCase(), stage);
@@ -415,6 +443,7 @@ class Puzzle extends Phaser.Scene {
     this.targets = []; this.pieces = [];
     const spacing = 112, y = 300;
     const word = 'ELLIOTT';
+    const scattered = this.mode === 'hard' ? this.scatterFloor() : undefined;
     for (let letter = 0; letter < word.length; letter++) {
       const x = 540 + (letter - 3) * spacing;
       if (word[letter] === 'I' || word[letter] === 'O') {
@@ -440,7 +469,7 @@ class Puzzle extends Phaser.Scene {
         const piece = { ...target, art, hit };
         this.pieces.push(piece);
         // Distribute strokes into separate floor slots so every piece is reachable.
-        const floorX = 100 + (id % 12) * 80, floorY = 540 + (id % 2) * 28;
+        const floorX = scattered?.[id].x ?? 100 + (id % 12) * 80, floorY = scattered?.[id].y ?? 540 + (id % 2) * 28;
         this.time.delayedCall(reduced ? 450 : 1400, () => {
           audio.crack();
           this.tweens.add({ targets: art, x: floorX, y: floorY, angle: reduced ? 0 : Phaser.Math.Between(-80, 80), duration: reduced ? 300 : 900, ease: 'Bounce.Out', delay: id * (reduced ? 0 : 25), onComplete: () => {
@@ -452,6 +481,17 @@ class Puzzle extends Phaser.Scene {
     }
     this.localizedText(540, 485, 'allPieces', { fontFamily: 'monospace', fontSize: '10px', color: '#a299a4' }).setOrigin(.5).setLetterSpacing(2);
     this.time.delayedCall(reduced ? 850 : 3050, () => { this.busy = false; this.pieceControls(); this.announce('dragInstructions'); });
+  }
+  private scatterFloor(): Point[] {
+    const points: Point[] = [];
+    for (let attempt = 0; points.length < 12 && attempt < 5000; attempt++) {
+      const point = { x: Phaser.Math.Between(70, 1010), y: Phaser.Math.Between(465, 595) };
+      if (points.every(p => Math.abs(p.x - point.x) > 65 || Math.abs(p.y - point.y) > 96)) points.push(point);
+    }
+    if (points.length === 12) return points;
+    return Phaser.Utils.Array.Shuffle(Array.from({ length: 12 }, (_, i) => ({
+      x: 95 + (i % 6) * 176 + Phaser.Math.Between(-12, 12), y: 480 + Math.floor(i / 6) * 110 + Phaser.Math.Between(-7, 7),
+    })));
   }
   private movePiece(piece: Piece, x: number, y: number) {
     piece.x = Phaser.Math.Clamp(x, 35, 1045); piece.y = Phaser.Math.Clamp(y, 150, 620);
@@ -465,7 +505,8 @@ class Puzzle extends Phaser.Scene {
       if (old) old.placed = false;
       piece.placed = false;
     }
-    const target = matchingStroke(piece, this.targets);
+    const settings = DIFFICULTY[this.mode];
+    const target = matchingStroke(piece, this.targets, { x: settings.snapX, y: settings.snapY });
     if (target) {
       target.placed = true; piece.placed = true; piece.art.setData('target', target.id);
       piece.x = target.x; piece.y = target.y;
@@ -549,6 +590,7 @@ class Puzzle extends Phaser.Scene {
 }
 
 const scene = new Puzzle();
+const difficultyMenu = new DifficultyMenu(mode => scene.chooseDifficulty(mode));
 const game = new Phaser.Game({
   // This game uses 2D vectors only. Canvas also avoids requiring working WebGL
   // drivers on managed Chromebooks and keeps software-rendered testing fast.

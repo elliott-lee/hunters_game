@@ -18,10 +18,10 @@ export function nearbyCracks(points: Point[], at: Point, radius = 110): number {
   return points.filter(p => Math.hypot(p.x - at.x, p.y - at.y) <= radius).length;
 }
 export type Stroke = Point & { width: number; height: number; id: number; letter: number; placed?: boolean };
-export function matchingStroke(piece: Stroke, targets: Stroke[]): Stroke | undefined {
+export function matchingStroke(piece: Stroke, targets: Stroke[], tolerance = { x: 43, y: 35 }): Stroke | undefined {
   // Positions are deliberately forgiving; lengths must be similar, not exact.
   return targets.filter(t => !t.placed && (piece.width > piece.height) === (t.width > t.height)
     && Math.abs(Math.max(piece.width, piece.height) - Math.max(t.width, t.height)) <= 15
-    && Math.abs(piece.x - t.x) <= 43 && Math.abs(piece.y - t.y) <= 35)
+    && Math.abs(piece.x - t.x) <= tolerance.x && Math.abs(piece.y - t.y) <= tolerance.y)
     .sort((a, b) => Math.hypot(piece.x - a.x, piece.y - a.y) - Math.hypot(piece.x - b.x, piece.y - b.y))[0];
 }
